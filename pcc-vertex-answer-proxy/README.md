@@ -135,3 +135,51 @@ include $_SERVER['DOCUMENT_ROOT'] . '/_resources/lance-widget/public/widget.php'
    - service account file path in `config/config.php`
    - writable permissions on `storage/`
    - allowed origin in `PCC_CORS_ORIGINS`
+
+## SFTP-only deployment checklist (no server terminal)
+
+If your production environment only allows SFTP, build dependencies locally, then upload the built artifact.
+
+### 1) Build locally
+
+```bash
+cd pcc-vertex-answer-proxy
+composer install --no-dev --optimize-autoloader
+```
+
+### 2) Upload to server via SFTP
+
+Upload the following to your target folder (example: `/_resources/lance-widget/`):
+
+- `public/` (including `api/answer.php`, `embed.js`, `widget.php`, `css/`)
+- `config/config.php`
+- `config/service-account.json`
+- `storage/cache/`
+- `storage/rate/`
+- `storage/logs/`
+- `vendor/`
+- `composer.json` and `composer.lock` (optional but recommended)
+
+Important:
+- Some SFTP clients skip empty folders. If needed, keep `.gitkeep` files in `storage/cache`, `storage/rate`, and `storage/logs`.
+
+### 3) Set permissions
+
+Ensure the web server/PHP process can write to:
+
+- `storage/cache`
+- `storage/rate`
+- `storage/logs`
+
+### 4) Add include on any PHP page/template
+
+```php
+<?php include $_SERVER['DOCUMENT_ROOT'] . '/_resources/lance-widget/public/widget.php'; ?>
+```
+
+### 5) Smoke test
+
+1. Open a page with the include.
+2. Click `Ask a Question`.
+3. Submit a query and verify response appears.
+4. Confirm `storage/logs/requests.log` is created and receiving entries.
