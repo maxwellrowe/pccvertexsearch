@@ -14,6 +14,7 @@ Bootstrap 5.3 frontend plus PHP 8.1+ REST proxy for the Vertex AI Search Engine 
 - CORS allowlist
 - Security headers
 - Bootstrap test UI and optional `embed.js` script
+- Optional `public/widget.php` include for drop-in site integration
 
 ## File layout
 
@@ -22,6 +23,7 @@ pcc-vertex-answer-proxy/
   public/
     index.php
     embed.js
+    widget.php
     api/
       answer.php
   config/
@@ -62,3 +64,74 @@ php -S 127.0.0.1:8080 -t public
 
 - Ensure `storage/cache`, `storage/rate`, and `storage/logs` are writable by PHP.
 - Keep `config/service-account.json` server-side only.
+
+## Modern Campus deployment (`/_resources` pattern)
+
+This is the recommended approach for integrating into an existing PHP site where you want a single deployable folder and a simple include.
+
+### 1) Deploy one folder
+
+Example destination:
+
+```text
+/_resources/lance-widget/
+  public/
+    api/answer.php
+    embed.js
+    widget.php
+    css/
+  config/
+    config.php
+    service-account.json
+  storage/
+    cache/
+    rate/
+    logs/
+  vendor/
+  composer.json
+```
+
+Notes:
+- `service-account.json` must remain server-side and never be committed.
+- `storage/*` must be writable by the web server user.
+- Run `composer install` in the deployed folder root (`/_resources/lance-widget/`) so `vendor/` exists.
+
+### 2) CORS allowlist
+
+Set origins in env or config so embedded pages can call the API:
+
+```bash
+PCC_CORS_ORIGINS="https://www.yoursite.edu,https://staging.yoursite.edu"
+```
+
+### 3) Include the launcher on any PHP template/page
+
+Use `public/widget.php`:
+
+```php
+<?php include $_SERVER['DOCUMENT_ROOT'] . '/_resources/lance-widget/public/widget.php'; ?>
+```
+
+Default paths used by `widget.php`:
+- Script: `/_resources/lance-widget/public/embed.js`
+- API endpoint: `/_resources/lance-widget/public/api/answer.php`
+
+Optional overrides before include:
+
+```php
+<?php
+$pccWidgetScript = '/_resources/lance-widget/public/embed.js';
+$pccWidgetEndpoint = '/_resources/lance-widget/public/api/answer.php';
+include $_SERVER['DOCUMENT_ROOT'] . '/_resources/lance-widget/public/widget.php';
+?>
+```
+
+### 4) Validate after deploy
+
+1. Open a page with the include and click `Ask a Question`.
+2. Confirm the modal opens and submits.
+3. Confirm `storage/logs/requests.log` is being written.
+4. If calls fail, verify:
+   - service account file path in `config/config.php`
+   - writable permissions on `storage/`
+   - allowed origin in `PCC_CORS_ORIGINS`
