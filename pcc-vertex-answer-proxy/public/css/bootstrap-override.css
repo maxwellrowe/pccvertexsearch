@@ -1,0 +1,151 @@
+/***************************
+Bootstrap 5.3 overrides
+***************************/
+/* Shim for XS size */
+
+/* Default “extra-small” columns (no breakpoint prefix in BS5) */
+[class*="col-xs-"] {
+  flex: 0 0 auto;
+  padding-right: var(--bs-gutter-x, .75rem);
+  padding-left:  var(--bs-gutter-x, .75rem);
+  /* base width overridden below per size */
+}
+
+/* Generate widths for .col-xs-1 through .col-xs-12 */
+.col-xs-1  { width: 8.333333%;  }
+.col-xs-2  { width: 16.666667%; }
+.col-xs-3  { width: 25%;        }
+.col-xs-4  { width: 33.333333%; }
+.col-xs-5  { width: 41.666667%; }
+.col-xs-6  { width: 50%;        }
+.col-xs-7  { width: 58.333333%; }
+.col-xs-8  { width: 66.666667%; }
+.col-xs-9  { width: 75%;        }
+.col-xs-10 { width: 83.333333%; }
+.col-xs-11 { width: 91.666667%; }
+.col-xs-12 { width: 100%;       }
+
+/* Make .col-xs act like .col (auto width) */
+.col-xs {
+  flex: 1 0 0%;
+  width: auto;
+}
+
+/* Optional offset support */
+.col-xs-offset-1  { margin-left: 8.333333%;  }
+.col-xs-offset-2  { margin-left: 16.666667%; }
+.col-xs-offset-3  { margin-left: 25%;        }
+.col-xs-offset-4  { margin-left: 33.333333%; }
+.col-xs-offset-5  { margin-left: 41.666667%; }
+.col-xs-offset-6  { margin-left: 50%;        }
+.col-xs-offset-7  { margin-left: 58.333333%; }
+.col-xs-offset-8  { margin-left: 66.666667%; }
+.col-xs-offset-9  { margin-left: 75%;        }
+.col-xs-offset-10 { margin-left: 83.333333%; }
+.col-xs-offset-11 { margin-left: 91.666667%; }
+
+/* Optional visibility helpers for xs (rough BS3 equivalents) */
+.visible-xs { display: block !important; }
+.hidden-xs  { display: none  !important; }
+
+/* HR */
+hr {
+	opacity: 1;
+}
+
+/* List Group */
+.list-group {
+	border-radius: var(--bs-border-radius);
+}
+.list-group .list-group-item {
+	padding: 0.75rem;
+}
+.list-group .list-group-item a {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	transition: all .2s ease-in-out;
+}
+.list-group .list-group-item a:hover {
+	transform: translateX(0.25rem);
+}
+
+
+/* Modal */
+.modal .modal-content .modal-header {
+	background: transparent;
+	border-bottom: 1px solid var(--bs-gray-800);
+}
+.modal .modal-content .modal-header h2 {
+	margin: 0;
+}
+.modal-backdrop {
+	background: linear-gradient(45deg, #B00D30, #600618);
+}
+.modal-backdrop.show {
+	opacity: 0.95;
+}
+.modal .modal-dialog {
+	border-radius: 0.25rem;
+}
+.modal .modal-content,
+.modal .modal-dialog {
+	border: none;
+}
+
+/* Close Button */
+.close {
+	float: right;
+	font-size: 2.5rem;
+	font-weight: 300;
+	line-height: 1;
+	color: var(--bs-black);
+	opacity: 0.5;
+	filter: alpha(opacity=80);
+	transition: all .2s ease-in-out;
+}
+.close:hover,
+.close:focus {
+	text-decoration: none;
+	cursor: pointer;
+	opacity: 1;
+	filter: alpha(opacity=50);
+}
+button.close {
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  -webkit-appearance: none;
+}
+
+/* Well */
+.well {
+  min-height: 1.25rem;
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+  background-color: var(--bs-gray-100);
+  border: 1px solid var(--bs-gray-100);
+  border-radius: var(--bs-border-radius-sm);
+}
+.well p:last-child {
+	margin-bottom:0;
+}
+.well blockquote {
+    
+}
+.well-lg {
+  padding: 1.75rem;
+  border-radius: 0;
+}
+.well-sm {
+  padding: 0.75rem;
+  border-radius: 0;
+}
+.well-form {
+  padding: 0.75rem;
+  border: 1px solid var(--bs-gray-200);
+}
+.well-form label {
+  font-weight: bold;
+}

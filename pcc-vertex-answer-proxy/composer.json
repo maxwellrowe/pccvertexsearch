@@ -1,0 +1,8 @@
+{
+  "name": "pcc/pcc-vertex-answer-proxy",
+  "description": "PHP proxy for Vertex AI Search Answer API + Bootstrap 5.3 UI",
+  "require": {
+    "php": ">=8.1",
+    "google/auth": "^1.40"
+  }
+}

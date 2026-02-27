@@ -1,0 +1,7 @@
+/vendor/
+/config/service-account.json
+/storage/cache/*
+/storage/rate/*
+/storage/logs/*
+.DS_Store
+.env
