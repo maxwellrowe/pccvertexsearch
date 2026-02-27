@@ -14,7 +14,7 @@
   const root = document.createElement("div");
   root.id = ROOT_ID;
   root.innerHTML = `
-    <button type="button" class="btn btn-primary position-fixed bottom-0 end-0 m-4 shadow" data-bs-toggle="modal" data-bs-target="#${MODAL_ID}">
+    <button id="pccw-launch" type="button" class="btn btn-primary position-fixed bottom-0 end-0 m-4 shadow" data-bs-toggle="modal" data-bs-target="#${MODAL_ID}">
       Ask a Question
     </button>
 
@@ -76,6 +76,7 @@
   document.body.appendChild(root);
 
   const el = {
+    launch: root.querySelector("#pccw-launch"),
     modal: root.querySelector(`#${MODAL_ID}`),
     q: root.querySelector("#pccw-q"),
     ask: root.querySelector("#pccw-ask"),
@@ -95,14 +96,47 @@
     fuWrap: root.querySelector("#pccw-fu-wrap"),
     fu: root.querySelector("#pccw-fu"),
   };
+  let widgetModal = null;
+  let referenceLookup = new Map();
 
-  if (!window.bootstrap?.Modal) {
-    console.error("Bootstrap Modal JS is required for embed.js");
-    return;
+  function loadBootstrapBundle() {
+    return new Promise((resolve, reject) => {
+      if (window.bootstrap?.Modal) {
+        resolve();
+        return;
+      }
+
+      const existing = document.querySelector('script[data-pcc-bootstrap-loader="1"]');
+      if (existing) {
+        existing.addEventListener("load", () => resolve(), { once: true });
+        existing.addEventListener("error", () => reject(new Error("Failed to load Bootstrap JS.")), { once: true });
+        return;
+      }
+
+      const src = script?.dataset?.bootstrapJs || "https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js";
+      const tag = document.createElement("script");
+      tag.src = src;
+      tag.async = true;
+      tag.dataset.pccBootstrapLoader = "1";
+      tag.onload = () => resolve();
+      tag.onerror = () => reject(new Error(`Failed to load Bootstrap JS from ${src}`));
+      document.head.appendChild(tag);
+    });
   }
 
-  const widgetModal = window.bootstrap.Modal.getOrCreateInstance(el.modal);
-  let referenceLookup = new Map();
+  async function ensureModalReady() {
+    if (widgetModal) {
+      return widgetModal;
+    }
+    if (!window.bootstrap?.Modal) {
+      await loadBootstrapBundle();
+    }
+    if (!window.bootstrap?.Modal) {
+      throw new Error("Bootstrap Modal JS is required for embed.js");
+    }
+    widgetModal = window.bootstrap.Modal.getOrCreateInstance(el.modal);
+    return widgetModal;
+  }
 
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, (m) => ({
@@ -313,6 +347,12 @@
       return;
     }
 
+    try {
+      await ensureModalReady();
+    } catch (e) {
+      setError(e?.message || "Unable to initialize modal.");
+      return;
+    }
     widgetModal.show();
     resetForAsk();
     setLoading(true);
@@ -365,6 +405,20 @@
   }
 
   el.ask.addEventListener("click", () => ask());
+  el.launch.addEventListener("click", async (e) => {
+    if (window.bootstrap?.Modal) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await ensureModalReady();
+      widgetModal.show();
+    } catch (err) {
+      console.error(err);
+      setError("Bootstrap modal JavaScript could not be loaded.");
+    }
+  });
   el.q.addEventListener("keydown", (e) => {
     if (e.key === "Enter") ask();
   });
@@ -373,4 +427,7 @@
     setError("");
     el.status.textContent = "Started a new chat session.";
   });
+
+  // Preload modal support in background when possible.
+  ensureModalReady().catch(() => {});
 })();
