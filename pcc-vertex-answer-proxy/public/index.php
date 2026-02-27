@@ -1,4 +1,20 @@
 <?php
+$scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/'));
+if ($scriptDir === '' || $scriptDir === '.') {
+  $scriptDir = '/';
+}
+$scriptDir = rtrim($scriptDir, '/');
+$apiEndpoint = ($scriptDir === '' ? '' : $scriptDir) . '/api/answer.php';
+
+// Prefer a concrete endpoint based on what exists under DOCUMENT_ROOT.
+$documentRoot = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+if ($documentRoot !== '') {
+  if (is_file($documentRoot . '/api/answer.php')) {
+    $apiEndpoint = '/api/answer.php';
+  } elseif (is_file($documentRoot . '/public/api/answer.php')) {
+    $apiEndpoint = '/public/api/answer.php';
+  }
+}
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -107,6 +123,7 @@
 <script>
 const $ = (sel) => document.querySelector(sel);
 const SESSION_KEY = "pcc_vertex_session";
+const API_ENDPOINT = <?= json_encode($apiEndpoint, JSON_UNESCAPED_SLASHES) ?>;
 let referenceLookup = new Map();
 let activePopovers = [];
 
@@ -342,7 +359,7 @@ async function ask(prefillQuestion = null) {
 
   try {
     const send = async (sid) => {
-      const res = await fetch("./api/answer.php", {
+      const res = await fetch(API_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
         body: new URLSearchParams({ q, sid }),
