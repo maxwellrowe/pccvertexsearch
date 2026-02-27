@@ -151,7 +151,7 @@
     <div id="pccw-overlay" class="pccw-overlay" role="dialog" aria-modal="true" aria-labelledby="pccw-title">
       <div class="pccw-modal">
         <div class="pccw-head">
-          <div id="pccw-title" class="pccw-title">Ask a Question</div>
+          <div id="pccw-title" class="pccw-title">Ask Lance O'Lot a Question</div>
           <button type="button" class="pccw-close" aria-label="Close">×</button>
         </div>
         <div class="pccw-body">
@@ -400,10 +400,11 @@
       const li = document.createElement("li");
       const title = r?.title || r?.uri || "Result";
       const uri = r?.uri || "";
-      const description = r?.description || r?.snippet || "No description available.";
+      const description = r?.description || r?.snippet || "";
+      const urlLine = uri ? `<div class="pccw-muted" style="font-size:12px;">${escapeHtml(uri)}</div>` : "";
       li.innerHTML = uri
-        ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a><div class="pccw-muted">${escapeHtml(description)}</div>`
-        : `${escapeHtml(title)}<div class="pccw-muted">${escapeHtml(description)}</div>`;
+        ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${urlLine}${description ? `<div class="pccw-muted">${escapeHtml(description)}</div>` : ""}`
+        : `${escapeHtml(title)}${description ? `<div class="pccw-muted">${escapeHtml(description)}</div>` : ""}`;
       el.search.appendChild(li);
     });
 

@@ -305,6 +305,27 @@ function format_search_results_fallback(array $searchResults): string {
   return implode("\n", $lines);
 }
 
+function search_results_from_references(array $references): array {
+  $rows = [];
+  foreach ($references as $r) {
+    if (!is_array($r)) {
+      continue;
+    }
+    $title = $r['title'] ?? null;
+    $uri = $r['uri'] ?? null;
+    $description = $r['snippet'] ?? null;
+    if ($title || $uri || $description) {
+      $rows[] = [
+        'title' => $title ?: ($uri ?: 'Result'),
+        'uri' => $uri,
+        'description' => $description,
+        'snippet' => $description,
+      ];
+    }
+  }
+  return $rows;
+}
+
 // -----------------------------
 // Load config + setup storage
 // -----------------------------
@@ -557,6 +578,9 @@ $citations = normalize_citations($citationsRaw);
 $relatedQuestions = normalize_related_questions($data['answer']['relatedQuestions'] ?? []);
 $references = normalize_references($data['answer']['references'] ?? []);
 $searchResults = extract_search_results($data);
+if (!$searchResults && $references) {
+  $searchResults = search_results_from_references($references);
+}
 $sessionOut = (string) (
   $data['session']
   ?? $data['sessionInfo']['name']

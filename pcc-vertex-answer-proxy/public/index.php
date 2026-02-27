@@ -44,10 +44,10 @@
 </div>
 
 <div class="modal fade" id="askModal" tabindex="-1" aria-labelledby="askModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-fullscreen">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h2 class="modal-title h5" id="askModalLabel">Ask a Question</h2>
+        <h2 class="modal-title h5" id="askModalLabel">Ask Lance O'Lot a Question</h2>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
@@ -236,9 +236,10 @@ function renderSearchResults(results) {
     const title = r?.title || r?.uri || "Result";
     const uri = r?.uri || "";
     const description = r?.description || r?.snippet || "";
-    const snippet = description ? `<div class="text-muted mt-1">${escapeHtml(description)}</div>` : `<div class="text-muted mt-1">No description available.</div>`;
+    const urlLine = uri ? `<div class="small text-dark">${escapeHtml(uri)}</div>` : "";
+    const snippet = description ? `<div class="text-muted mt-1">${escapeHtml(description)}</div>` : "";
     item.innerHTML = uri
-      ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${snippet}`
+      ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${urlLine}${snippet}`
       : `<span>${escapeHtml(title)}</span>${snippet}`;
     list.appendChild(item);
   });
