@@ -6,193 +6,69 @@
   if (!endpoint) return;
 
   const SESSION_KEY = "pcc_vertex_embed_session";
-  const WIDGET_ID = "pcc-ask-widget";
+  const ROOT_ID = "pcc-vertex-widget";
+  const MODAL_ID = "pccVertexWidgetModal";
 
-  if (document.getElementById(WIDGET_ID)) return;
-
-  const style = document.createElement("style");
-  style.textContent = `
-    .pccw-launch {
-      position: fixed;
-      right: 20px;
-      bottom: 20px;
-      z-index: 2147483000;
-      border: 0;
-      border-radius: 999px;
-      background: #0d6efd;
-      color: #fff;
-      font: 600 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      padding: 12px 16px;
-      cursor: pointer;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, .2);
-    }
-    .pccw-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, .52);
-      z-index: 2147483001;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-      box-sizing: border-box;
-    }
-    .pccw-overlay.open { display: flex; }
-    .pccw-modal {
-      width: min(1100px, 100%);
-      max-height: 92vh;
-      background: #fff;
-      border-radius: 14px;
-      box-shadow: 0 16px 38px rgba(0, 0, 0, .28);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      color: #1f2937;
-    }
-    .pccw-head, .pccw-foot {
-      padding: 12px 14px;
-      border-bottom: 1px solid #e5e7eb;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-    }
-    .pccw-foot {
-      border-top: 1px solid #e5e7eb;
-      border-bottom: 0;
-      justify-content: flex-end;
-    }
-    .pccw-title { font-weight: 700; }
-    .pccw-close {
-      border: 0;
-      background: transparent;
-      font-size: 22px;
-      line-height: 1;
-      cursor: pointer;
-      color: #6b7280;
-    }
-    .pccw-body { padding: 14px; overflow: auto; }
-    .pccw-row { margin-bottom: 10px; }
-    .pccw-label { display: block; margin-bottom: 6px; font-weight: 600; }
-    .pccw-input {
-      width: 100%;
-      border: 1px solid #d1d5db;
-      border-radius: 10px;
-      padding: 10px;
-      box-sizing: border-box;
-      font: inherit;
-    }
-    .pccw-btn {
-      border: 0;
-      border-radius: 8px;
-      padding: 10px 14px;
-      cursor: pointer;
-      font: 600 14px/1.1 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-    }
-    .pccw-btn.primary { background: #0d6efd; color: #fff; }
-    .pccw-btn.subtle { background: #f3f4f6; color: #111827; }
-    .pccw-status { color: #6b7280; font-size: 13px; min-height: 18px; }
-    .pccw-error {
-      display: none;
-      background: #fef2f2;
-      color: #991b1b;
-      border: 1px solid #fecaca;
-      border-radius: 8px;
-      padding: 8px 10px;
-    }
-    .pccw-error.show { display: block; }
-    .pccw-result { display: none; border-top: 1px solid #e5e7eb; padding-top: 12px; margin-top: 8px; }
-    .pccw-result.show { display: block; }
-    .pccw-meta { color: #6b7280; font-size: 12px; margin-left: 8px; }
-    .pccw-answer { margin: 8px 0; white-space: pre-wrap; }
-    .pccw-answer p:last-child { margin-bottom: 0; }
-    .pccw-anchors a {
-      text-decoration: none;
-      display: inline-block;
-      margin-right: 6px;
-      margin-bottom: 6px;
-      border: 1px solid #d1d5db;
-      border-radius: 8px;
-      padding: 2px 8px;
-      color: #1f2937;
-      font-size: 12px;
-      background: #f9fafb;
-    }
-    .pccw-sec { margin-top: 12px; }
-    .pccw-sec h4 { margin: 0 0 6px; font-size: 14px; }
-    .pccw-list { margin: 0; padding-left: 18px; }
-    .pccw-list li { margin-bottom: 6px; }
-    .pccw-muted { color: #6b7280; }
-    .pccw-followups { display: flex; gap: 8px; flex-wrap: wrap; }
-    .pccw-pill {
-      border: 1px solid #d1d5db;
-      border-radius: 999px;
-      background: #f9fafb;
-      color: #111827;
-      padding: 6px 10px;
-      cursor: pointer;
-      font: 500 13px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-    }
-    .pccw-details > summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; }
-    .pccw-highlight { background: #fff3cd; transition: background-color .7s ease; }
-    @media (max-width: 768px) {
-      .pccw-overlay { padding: 0; }
-      .pccw-modal { width: 100%; max-height: 100vh; height: 100vh; border-radius: 0; }
-      .pccw-launch { right: 12px; bottom: 12px; }
-    }
-  `;
-  document.head.appendChild(style);
+  if (document.getElementById(ROOT_ID)) return;
 
   const root = document.createElement("div");
-  root.id = WIDGET_ID;
+  root.id = ROOT_ID;
   root.innerHTML = `
-    <button type="button" class="pccw-launch" aria-haspopup="dialog" aria-controls="pccw-overlay">Ask a Question</button>
-    <div id="pccw-overlay" class="pccw-overlay" role="dialog" aria-modal="true" aria-labelledby="pccw-title">
-      <div class="pccw-modal">
-        <div class="pccw-head">
-          <div id="pccw-title" class="pccw-title">Ask Lance O'Lot a Question</div>
-          <button type="button" class="pccw-close" aria-label="Close">×</button>
-        </div>
-        <div class="pccw-body">
-          <div class="pccw-row">
-            <label class="pccw-label" for="pccw-q">What would you like to ask?</label>
-            <input id="pccw-q" class="pccw-input" type="text" placeholder="e.g., how do I get started at PCC?" />
+    <button type="button" class="btn btn-primary position-fixed bottom-0 end-0 m-4 shadow" data-bs-toggle="modal" data-bs-target="#${MODAL_ID}">
+      Ask a Question
+    </button>
+
+    <div class="modal fade" id="${MODAL_ID}" tabindex="-1" aria-labelledby="${MODAL_ID}Label" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 class="modal-title h5" id="${MODAL_ID}Label">Ask Lance O'Lot a Question</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
-          <div id="pccw-status" class="pccw-status"></div>
-          <div id="pccw-error" class="pccw-error pccw-row"></div>
+          <div class="modal-body">
+            <label class="form-label" for="pccw-q">What would you like to ask?</label>
+            <input id="pccw-q" class="form-control" type="text" placeholder="e.g., how do I get started at PCC?" />
+            <div id="pccw-status" class="small text-muted mt-2"></div>
+            <div id="pccw-error" class="alert alert-danger d-none mt-3"></div>
 
-          <div id="pccw-result" class="pccw-result">
-            <div><strong>Answer</strong><span id="pccw-meta" class="pccw-meta"></span></div>
-            <div id="pccw-answer" class="pccw-answer"></div>
-            <div id="pccw-anchors" class="pccw-anchors" style="display:none;"></div>
+            <div id="pccw-result" class="card shadow-sm d-none mt-3">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h3 class="h5 mb-0">Answer</h3>
+                  <span id="pccw-meta" class="badge text-bg-secondary"></span>
+                </div>
 
-            <div id="pccw-cites-wrap" class="pccw-sec" style="display:none;">
-              <h4>Citations</h4>
-              <ol id="pccw-cites" class="pccw-list"></ol>
-            </div>
+                <div id="pccw-answer" class="mb-3"></div>
+                <div id="pccw-anchors" class="small d-none mb-2"></div>
 
-            <div id="pccw-refs-wrap" class="pccw-sec" style="display:none;">
-              <details class="pccw-details">
-                <summary>References</summary>
-                <ol id="pccw-refs" class="pccw-list"></ol>
-              </details>
-            </div>
+                <div id="pccw-cites-wrap" class="d-none">
+                  <h4 class="h6">Citations</h4>
+                  <ol id="pccw-cites" class="small"></ol>
+                </div>
 
-            <div id="pccw-search-wrap" class="pccw-sec" style="display:none;">
-              <h4>Search Results</h4>
-              <ul id="pccw-search" class="pccw-list"></ul>
-            </div>
+                <div id="pccw-refs-wrap" class="d-none mt-3">
+                  <details>
+                    <summary class="h6 mb-2">References</summary>
+                    <ol id="pccw-refs" class="small mb-0"></ol>
+                  </details>
+                </div>
 
-            <div id="pccw-fu-wrap" class="pccw-sec" style="display:none;">
-              <h4>Follow-up questions</h4>
-              <div id="pccw-fu" class="pccw-followups"></div>
+                <div id="pccw-search-wrap" class="d-none mt-3">
+                  <h4 class="h6">Search Results</h4>
+                  <ul id="pccw-search" class="list-group list-group-flush small"></ul>
+                </div>
+
+                <div id="pccw-fu-wrap" class="d-none mt-3">
+                  <h4 class="h6">Follow-up questions</h4>
+                  <div id="pccw-fu" class="d-flex flex-wrap gap-2"></div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-        <div class="pccw-foot">
-          <button type="button" id="pccw-new" class="pccw-btn subtle">New chat</button>
-          <button type="button" id="pccw-ask" class="pccw-btn primary">Ask</button>
+          <div class="modal-footer">
+            <button type="button" id="pccw-new" class="btn btn-outline-secondary">New chat</button>
+            <button type="button" id="pccw-ask" class="btn btn-primary">Ask</button>
+          </div>
         </div>
       </div>
     </div>
@@ -200,9 +76,7 @@
   document.body.appendChild(root);
 
   const el = {
-    launch: root.querySelector(".pccw-launch"),
-    overlay: root.querySelector("#pccw-overlay"),
-    close: root.querySelector(".pccw-close"),
+    modal: root.querySelector(`#${MODAL_ID}`),
     q: root.querySelector("#pccw-q"),
     ask: root.querySelector("#pccw-ask"),
     newChat: root.querySelector("#pccw-new"),
@@ -222,16 +96,13 @@
     fu: root.querySelector("#pccw-fu"),
   };
 
+  if (!window.bootstrap?.Modal) {
+    console.error("Bootstrap Modal JS is required for embed.js");
+    return;
+  }
+
+  const widgetModal = window.bootstrap.Modal.getOrCreateInstance(el.modal);
   let referenceLookup = new Map();
-
-  function open() {
-    el.overlay.classList.add("open");
-    setTimeout(() => el.q.focus(), 0);
-  }
-
-  function close() {
-    el.overlay.classList.remove("open");
-  }
 
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, (m) => ({
@@ -245,39 +116,39 @@
 
   function setError(msg) {
     if (!msg) {
-      el.error.classList.remove("show");
+      el.error.classList.add("d-none");
       el.error.textContent = "";
       return;
     }
     el.error.textContent = msg;
-    el.error.classList.add("show");
+    el.error.classList.remove("d-none");
   }
 
   function setLoading(on) {
     el.ask.disabled = on;
-    el.launch.disabled = on;
     el.status.textContent = on ? "Thinking… (Lance is trotting to the sources)" : "";
   }
 
   function resetForAsk() {
     setError("");
-    el.result.classList.remove("show");
+    el.result.classList.add("d-none");
     el.meta.textContent = "";
     el.answer.textContent = "";
+
     el.anchors.innerHTML = "";
-    el.anchors.style.display = "none";
+    el.anchors.classList.add("d-none");
 
     el.cites.innerHTML = "";
-    el.citesWrap.style.display = "none";
+    el.citesWrap.classList.add("d-none");
 
     el.refs.innerHTML = "";
-    el.refsWrap.style.display = "none";
+    el.refsWrap.classList.add("d-none");
 
     el.search.innerHTML = "";
-    el.searchWrap.style.display = "none";
+    el.searchWrap.classList.add("d-none");
 
     el.fu.innerHTML = "";
-    el.fuWrap.style.display = "none";
+    el.fuWrap.classList.add("d-none");
 
     referenceLookup = new Map();
   }
@@ -293,18 +164,16 @@
       try {
         const html = window.marked.parse(text, { breaks: true, gfm: true });
         el.answer.innerHTML = window.DOMPurify.sanitize(html);
-        el.answer.style.whiteSpace = "normal";
         return;
       } catch (e) {}
     }
 
     el.answer.innerHTML = escapeHtml(text).replace(/\n/g, "<br>");
-    el.answer.style.whiteSpace = "normal";
   }
 
   function renderCitations(citations) {
     if (!Array.isArray(citations) || citations.length === 0) {
-      el.citesWrap.style.display = "none";
+      el.citesWrap.classList.add("d-none");
       return;
     }
 
@@ -317,12 +186,12 @@
         : escapeHtml(title);
       el.cites.appendChild(li);
     });
-    el.citesWrap.style.display = "block";
+    el.citesWrap.classList.remove("d-none");
   }
 
   function renderReferences(references) {
     if (!Array.isArray(references) || references.length === 0) {
-      el.refsWrap.style.display = "none";
+      el.refsWrap.classList.add("d-none");
       return;
     }
 
@@ -332,10 +201,10 @@
       li.id = `pccw-ref-${n}`;
       const title = r?.title || r?.uri || "Reference";
       const uri = r?.uri || "";
-      const snippet = r?.snippet ? `<div class="pccw-muted">${escapeHtml(r.snippet)}</div>` : "";
+      const snippet = r?.snippet ? `<div class="text-muted">${escapeHtml(r.snippet)}</div>` : "";
       li.innerHTML = uri
-        ? `<span>[${n}]</span> <a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${snippet}`
-        : `<span>[${n}]</span> ${escapeHtml(title)}${snippet}`;
+        ? `<span class="badge text-bg-light border me-1">[${n}]</span><a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${snippet}`
+        : `<span class="badge text-bg-light border me-1">[${n}]</span>${escapeHtml(title)}${snippet}`;
       el.refs.appendChild(li);
 
       const key = `${uri}|${String(title).toLowerCase()}`;
@@ -343,7 +212,7 @@
       if (uri) referenceLookup.set(`${uri}|`, n);
     });
 
-    el.refsWrap.style.display = "block";
+    el.refsWrap.classList.remove("d-none");
   }
 
   function findReferenceNumber(citation) {
@@ -356,7 +225,7 @@
 
   function renderAnswerAnchors(citations) {
     if (!Array.isArray(citations) || citations.length === 0) {
-      el.anchors.style.display = "none";
+      el.anchors.classList.add("d-none");
       return;
     }
 
@@ -364,6 +233,7 @@
     citations.forEach((c, i) => {
       const refNum = findReferenceNumber(c);
       const a = document.createElement("a");
+      a.className = "badge text-bg-light border text-decoration-none me-1";
       a.textContent = `[${refNum || (i + 1)}]`;
       a.title = c?.title || "Reference";
 
@@ -373,8 +243,8 @@
           a.addEventListener("click", () => {
             const target = document.getElementById(`pccw-ref-${refNum}`);
             if (!target) return;
-            target.classList.add("pccw-highlight");
-            setTimeout(() => target.classList.remove("pccw-highlight"), 900);
+            target.classList.add("bg-warning-subtle");
+            setTimeout(() => target.classList.remove("bg-warning-subtle"), 900);
           });
           el.anchors.appendChild(a);
           seen.add(refNum);
@@ -387,40 +257,44 @@
       }
     });
 
-    if (el.anchors.children.length) el.anchors.style.display = "block";
+    if (el.anchors.children.length) {
+      el.anchors.classList.remove("d-none");
+    }
   }
 
   function renderSearch(results) {
     if (!Array.isArray(results) || results.length === 0) {
-      el.searchWrap.style.display = "none";
+      el.searchWrap.classList.add("d-none");
       return;
     }
 
     results.forEach((r) => {
       const li = document.createElement("li");
+      li.className = "list-group-item px-0";
       const title = r?.title || r?.uri || "Result";
       const uri = r?.uri || "";
       const description = r?.description || r?.snippet || "";
-      const urlLine = uri ? `<div class="pccw-muted" style="font-size:12px;">${escapeHtml(uri)}</div>` : "";
+      const urlLine = uri ? `<div class="small text-dark">${escapeHtml(uri)}</div>` : "";
+      const descriptionLine = description ? `<div class="text-muted mt-1">${escapeHtml(description)}</div>` : "";
       li.innerHTML = uri
-        ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${urlLine}${description ? `<div class="pccw-muted">${escapeHtml(description)}</div>` : ""}`
-        : `${escapeHtml(title)}${description ? `<div class="pccw-muted">${escapeHtml(description)}</div>` : ""}`;
+        ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${urlLine}${descriptionLine}`
+        : `${escapeHtml(title)}${descriptionLine}`;
       el.search.appendChild(li);
     });
 
-    el.searchWrap.style.display = "block";
+    el.searchWrap.classList.remove("d-none");
   }
 
   function renderFollowUps(items) {
     if (!Array.isArray(items) || items.length === 0) {
-      el.fuWrap.style.display = "none";
+      el.fuWrap.classList.add("d-none");
       return;
     }
 
     items.forEach((rq) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "pccw-pill";
+      btn.className = "btn btn-outline-secondary btn-sm rounded-pill";
       btn.textContent = rq;
       btn.addEventListener("click", () => {
         el.q.value = rq;
@@ -429,7 +303,7 @@
       el.fu.appendChild(btn);
     });
 
-    el.fuWrap.style.display = "block";
+    el.fuWrap.classList.remove("d-none");
   }
 
   async function ask(prefillQuestion = "") {
@@ -439,7 +313,7 @@
       return;
     }
 
-    open();
+    widgetModal.show();
     resetForAsk();
     setLoading(true);
 
@@ -478,8 +352,8 @@
         localStorage.setItem(SESSION_KEY, data.meta.session);
       }
 
-      el.meta.textContent = data?.meta ? ` ${data.meta.elapsed_ms ?? "?"}ms • ${data.meta.cache ?? "?"}` : "";
-      el.result.classList.add("show");
+      el.meta.textContent = `${data?.meta?.elapsed_ms ?? "?"}ms • ${data?.meta?.cache ?? "?"}`;
+      el.result.classList.remove("d-none");
       el.q.value = "";
       el.q.focus();
       el.status.textContent = "";
@@ -489,15 +363,6 @@
       setLoading(false);
     }
   }
-
-  el.launch.addEventListener("click", open);
-  el.close.addEventListener("click", close);
-  el.overlay.addEventListener("click", (e) => {
-    if (e.target === el.overlay) close();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && el.overlay.classList.contains("open")) close();
-  });
 
   el.ask.addEventListener("click", () => ask());
   el.q.addEventListener("keydown", (e) => {
