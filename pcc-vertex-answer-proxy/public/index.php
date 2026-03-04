@@ -67,18 +67,26 @@ if ($documentRoot !== '') {
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <label class="form-label" for="q">What would you like to ask?</label>
-        <input id="q" class="form-control" type="text" placeholder="e.g., how do I get started at PCC?" />
+        <div class="d-flex gap-2 align-items-end">
+          <div class="flex-grow-1">
+            <label class="form-label" for="q">What would you like to ask?</label>
+            <input id="q" class="form-control" type="text" placeholder="e.g., how do I get started at PCC?" />
+          </div>
+          <button id="modalAskBtn" class="btn btn-primary" type="button">Ask</button>
+        </div>
         <div id="modalStatus" class="small-muted mt-2"></div>
         <div id="error" class="alert alert-danger d-none mt-3"></div>
 
-        <div id="result" class="card shadow-sm d-none mt-3">
+        <div id="result" class="card shadow-sm d-none">
           <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <h2 class="h5 mb-0">Answer</h2>
-              <span id="meta" class="badge text-bg-secondary"></span>
+            <div id="questionPill" class="d-none mb-2 p-1 border rounded-3 bg-light text-dark small"></div>
+            <div class="border border-light-subtle rounded-3 p-2 mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h2 class="h6 mb-0">Answer</h2>
+                <a id="metaLink" class="small d-none" href="#searchWrap">View Search Results</a>
+              </div>
+              <div id="answer" class="answer"></div>
             </div>
-            <div id="answer" class="answer mb-3"></div>
             <div id="answerCitations" class="citation-anchors small d-none mb-2"></div>
 
             <div id="citationsWrap" class="d-none">
@@ -109,9 +117,6 @@ if ($documentRoot !== '') {
             </details>
           </div>
         </div>
-      </div>
-      <div class="modal-footer">
-        <button id="modalAskBtn" class="btn btn-primary" type="button">Ask</button>
       </div>
     </div>
   </div>
@@ -160,6 +165,23 @@ function renderAnswerText(text) {
     answerEl.textContent = raw;
     answerEl.style.whiteSpace = "pre-wrap";
   }
+}
+
+function renderQuestionPill(question) {
+  const q = String(question || "").trim();
+  const pill = $("#questionPill");
+  if (!q) {
+    pill.textContent = "";
+    pill.classList.add("d-none");
+    return;
+  }
+  pill.innerHTML = "";
+  const label = document.createElement("span");
+  label.className = "fw-semibold";
+  label.textContent = "Question:";
+  pill.appendChild(label);
+  pill.appendChild(document.createTextNode(` ${q}`));
+  pill.classList.remove("d-none");
 }
 
 function resetPopovers() {
@@ -348,7 +370,9 @@ async function ask(prefillQuestion = null) {
   resetPopovers();
   $("#result").classList.add("d-none");
   $("#debug").textContent = "";
-  $("#meta").textContent = "";
+  $("#metaLink").classList.add("d-none");
+  $("#questionPill").textContent = "";
+  $("#questionPill").classList.add("d-none");
   $("#answerCitations").classList.add("d-none");
   $("#answerCitations").innerHTML = "";
 
@@ -381,13 +405,16 @@ async function ask(prefillQuestion = null) {
       throw new Error(data?.error || `Request failed (${res.status})`);
     }
 
+    renderQuestionPill(q);
     renderAnswerText(data.answer);
     renderCitations(data.citations || []);
     renderReferences(data.references || []);
     renderAnswerCitations(data.citations || []);
     renderSearchResults(data.search_results || []);
     renderFollowUps(data.related_questions || []);
-    $("#meta").textContent = `${data?.meta?.elapsed_ms ?? "?"}ms • ${data?.meta?.cache ?? "?"}`;
+    if (Array.isArray(data.search_results) && data.search_results.length > 0) {
+      $("#metaLink").classList.remove("d-none");
+    }
     $("#debug").textContent = JSON.stringify(data, null, 2);
 
     if (data?.meta?.session) {
@@ -403,7 +430,7 @@ async function ask(prefillQuestion = null) {
   }
 }
 
-$("#modalAskBtn").addEventListener("click", ask);
+$("#modalAskBtn").addEventListener("click", () => ask());
 $("#q").addEventListener("keydown", (e) => {
   if (e.key === "Enter") ask();
 });

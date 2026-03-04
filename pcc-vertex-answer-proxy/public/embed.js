@@ -26,19 +26,26 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <label class="form-label" for="pccw-q">What would you like to ask?</label>
-            <input id="pccw-q" class="form-control" type="text" placeholder="e.g., how do I get started at PCC?" />
+            <div class="d-flex gap-2 align-items-end">
+              <div class="flex-grow-1">
+                <label class="form-label" for="pccw-q">What would you like to ask?</label>
+                <input id="pccw-q" class="form-control" type="text" placeholder="e.g., how do I get started at PCC?" />
+              </div>
+              <button type="button" id="pccw-ask" class="btn btn-primary">Ask</button>
+            </div>
             <div id="pccw-status" class="small text-muted mt-2"></div>
             <div id="pccw-error" class="alert alert-danger d-none mt-3"></div>
 
             <div id="pccw-result" class="card shadow-sm d-none mt-3">
               <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <h3 class="h5 mb-0">Answer</h3>
-                  <span id="pccw-meta" class="badge text-bg-secondary"></span>
+                <div id="pccw-question-pill" class="d-none mb-2 p-1 border rounded-3 bg-light text-dark small"></div>
+                <div class="border border-light-subtle rounded-3 p-2 mb-3">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h3 class="h6 mb-0">Answer</h3>
+                    <a id="pccw-meta-link" class="small d-none" href="#pccw-search-wrap">View Search Results</a>
+                  </div>
+                  <div id="pccw-answer"></div>
                 </div>
-
-                <div id="pccw-answer" class="mb-3"></div>
                 <div id="pccw-anchors" class="small d-none mb-2"></div>
 
                 <div id="pccw-cites-wrap" class="d-none">
@@ -67,7 +74,6 @@
           </div>
           <div class="modal-footer">
             <button type="button" id="pccw-new" class="btn btn-outline-secondary">New chat</button>
-            <button type="button" id="pccw-ask" class="btn btn-primary">Ask</button>
           </div>
         </div>
       </div>
@@ -84,7 +90,8 @@
     status: root.querySelector("#pccw-status"),
     error: root.querySelector("#pccw-error"),
     result: root.querySelector("#pccw-result"),
-    meta: root.querySelector("#pccw-meta"),
+    questionPill: root.querySelector("#pccw-question-pill"),
+    metaLink: root.querySelector("#pccw-meta-link"),
     answer: root.querySelector("#pccw-answer"),
     anchors: root.querySelector("#pccw-anchors"),
     citesWrap: root.querySelector("#pccw-cites-wrap"),
@@ -98,6 +105,7 @@
   };
   let widgetModal = null;
   let referenceLookup = new Map();
+  let markdownLoadPromise = null;
 
   function loadBootstrapBundle() {
     return new Promise((resolve, reject) => {
@@ -122,6 +130,40 @@
       tag.onerror = () => reject(new Error(`Failed to load Bootstrap JS from ${src}`));
       document.head.appendChild(tag);
     });
+  }
+
+  function loadScriptOnce(dataAttr, src) {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[data-${dataAttr}="1"]`);
+      if (existing) {
+        // If a matching loader is already present, avoid duplicate injection.
+        resolve();
+        return;
+      }
+
+      const tag = document.createElement("script");
+      tag.src = src;
+      tag.async = true;
+      tag.dataset[dataAttr] = "1";
+      tag.onload = () => resolve();
+      tag.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(tag);
+    });
+  }
+
+  async function ensureMarkdownReady() {
+    if (window.marked && window.DOMPurify) {
+      return;
+    }
+    if (!markdownLoadPromise) {
+      const markedSrc = script?.dataset?.markedJs || "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
+      const purifySrc = script?.dataset?.dompurifyJs || "https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js";
+      markdownLoadPromise = Promise.all([
+        loadScriptOnce("pccMarkedLoader", markedSrc),
+        loadScriptOnce("pccDompurifyLoader", purifySrc),
+      ]).catch(() => {});
+    }
+    await markdownLoadPromise;
   }
 
   async function ensureModalReady() {
@@ -166,7 +208,9 @@
   function resetForAsk() {
     setError("");
     el.result.classList.add("d-none");
-    el.meta.textContent = "";
+    el.questionPill.textContent = "";
+    el.questionPill.classList.add("d-none");
+    el.metaLink.classList.add("d-none");
     el.answer.textContent = "";
 
     el.anchors.innerHTML = "";
@@ -203,6 +247,22 @@
     }
 
     el.answer.innerHTML = escapeHtml(text).replace(/\n/g, "<br>");
+  }
+
+  function renderQuestionPill(question) {
+    const q = String(question || "").trim();
+    if (!q) {
+      el.questionPill.textContent = "";
+      el.questionPill.classList.add("d-none");
+      return;
+    }
+    el.questionPill.innerHTML = "";
+    const label = document.createElement("span");
+    label.className = "fw-semibold";
+    label.textContent = "Question:";
+    el.questionPill.appendChild(label);
+    el.questionPill.appendChild(document.createTextNode(` ${q}`));
+    el.questionPill.classList.remove("d-none");
   }
 
   function renderCitations(citations) {
@@ -353,6 +413,7 @@
       setError(e?.message || "Unable to initialize modal.");
       return;
     }
+    await ensureMarkdownReady();
     widgetModal.show();
     resetForAsk();
     setLoading(true);
@@ -381,6 +442,7 @@
         throw new Error(data?.error || `Request failed (${res.status})`);
       }
 
+      renderQuestionPill(text);
       renderAnswer(data.answer);
       renderCitations(data.citations || []);
       renderReferences(data.references || []);
@@ -392,7 +454,9 @@
         localStorage.setItem(SESSION_KEY, data.meta.session);
       }
 
-      el.meta.textContent = `${data?.meta?.elapsed_ms ?? "?"}ms • ${data?.meta?.cache ?? "?"}`;
+      if (Array.isArray(data.search_results) && data.search_results.length > 0) {
+        el.metaLink.classList.remove("d-none");
+      }
       el.result.classList.remove("d-none");
       el.q.value = "";
       el.q.focus();
@@ -430,4 +494,5 @@
 
   // Preload modal support in background when possible.
   ensureModalReady().catch(() => {});
+  ensureMarkdownReady().catch(() => {});
 })();

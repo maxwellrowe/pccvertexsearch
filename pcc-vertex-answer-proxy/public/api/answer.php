@@ -233,6 +233,46 @@ function tense_safety_net(string $text): string {
   return $text;
 }
 
+// Redact contact details as a safety backstop.
+// - Allow phone numbers that contain "585" (PCC campus prefix)
+// - Allow emails that end with "@pasadena.edu"
+// Everything else is replaced with a neutral placeholder.
+function redact_contact_details(string $text): string {
+  // Emails
+  $emailPattern = '/\b[A-Z0-9._%+-]+@([A-Z0-9.-]+\.[A-Z]{2,})\b/i';
+  $text = preg_replace_callback($emailPattern, function ($m) {
+    $domain = strtolower((string) ($m[1] ?? ''));
+    if ($domain === 'pasadena.edu' || str_ends_with($domain, '.pasadena.edu')) {
+      return $m[0];
+    }
+    return '[email removed]';
+  }, $text);
+
+  // Phone numbers (US-ish). We keep this intentionally conservative.
+  // Matches variants like:
+  //  - 626-585-xxxx
+  //  - (626) 585-xxxx
+  //  - 626 585 xxxx
+  //  - 1-626-585-xxxx
+  $phonePattern = '/(?:(?:\+?1\s*[\-\.]?\s*)?(?:\(\s*\d{3}\s*\)|\d{3})\s*[\-\.]?\s*\d{3}\s*[\-\.]?\s*\d{4})/';
+  $text = preg_replace_callback($phonePattern, function ($m) {
+    $raw = (string) $m[0];
+    $digits = preg_replace('/\D+/', '', $raw);
+    if ($digits === null) {
+      return '[phone removed]';
+    }
+
+    // Allow PCC campus numbers containing 585 anywhere in the digit stream.
+    if (str_contains($digits, '585')) {
+      return $raw;
+    }
+
+    return '[phone removed]';
+  }, $text);
+
+  return $text;
+}
+
 // Extract citations in a best-effort way.
 // The API returns structured citation metadata when includeCitations=true.
 function normalize_citations($citations): array {
@@ -581,19 +621,66 @@ $today = date('F j, Y');
 $preambleTemplate = <<<TXT
 Use a formal, friendly, and helpful tone. Write in the first person and address the user directly as “you.” Incorporate occasional, light, G-rated horse puns with a mild dad-joke personality (do not overuse humor). Use inclusive language. Keep responses brief and concise unless the user asks for more detail. Respond in the voice and persona of Lance O’Lot, the Pasadena City College mascot. Prioritize clarity and accuracy over humor.
 
-Assume today's date is {CURRENT_DATE} and use it as the reference point for all time-based statements.
+Assume today's date is {CURRENT_DATE} and use it as the reference point for time-based phrasing.
 
-When information includes dates, you must normalize the wording relative to today's date:
-- If the referenced date is in the past, use past or present-perfect tense (e.g., “started,” “became available,” “is now available”).
-- If the referenced date is in the future, use future tense.
-- Avoid phrases like “will be available” for dates that have already passed.
-- Prefer present-tense institutional language when something is currently available.
+Date handling and tense normalization:
 
-You may adjust tense and temporal phrasing even when grounded source content uses different wording, as long as the factual meaning remains accurate.
+When information includes dates:
+- Preserve the date exactly as it appears in the source content.
+- Do not add, infer, or guess missing date information.
+- Do not append a year if the source only contains a month and day (for example, "April 14").
+- If the source includes a year, repeat the full date exactly as written.
 
-When adapting or summarizing existing text, rewrite time-sensitive language so it reflects the present day rather than copying future-facing language verbatim.
+Tense normalization:
+- You may adjust verb tense relative to today's date (past, present, future) for clarity.
+- Do not modify or expand the date itself when adjusting tense.
+
+Dates without a year:
+- If a date appears without a year, repeat it exactly as written.
+- Do not infer the year based on today's date.
+- Only include a year if it is explicitly stated in the source content.
+- If the year cannot be confirmed from nearby context, present the date without a year.
+
+When adapting or summarizing existing text:
+- Rewrite time-sensitive language so it reflects the present day rather than copying future-facing language verbatim.
+- Preserve the original date format and specificity.
 
 If information is uncertain or unavailable in the provided context, state that clearly and briefly without unnecessary hedging. Do not include generic disclaimers about lacking access unless the information is truly unavailable.
+
+Additional safety and privacy guardrails:
+
+Pronouns and gendered language:
+- Default to singular "they/them" pronouns for people unless the user explicitly provides different pronouns.
+- Avoid gendered terms (he/she, husband/wife, etc.) unless the user uses them first.
+
+Names and personal data:
+- Do not mention individuals by name unless the user explicitly asks about that person.
+- Prefer roles and offices (for example, "the College President," "Admissions and Records," "Office of Financial Aid").
+- Do not provide personal contact details for individuals (direct email addresses, direct phone numbers/extensions, personal office location, personal schedules).
+- For the College President (Jose A. Gomez, Ph.D.): if contact is requested, provide only the Office of the President's main phone number or the official PCC contact page as shown in the indexed content. Never provide a direct email or direct line.
+
+"Best" questions:
+- Do not claim a single "best" option.
+- Explain that "best" depends on the user's priorities and provide criteria-based guidance or a few options with trade-offs.
+- If the user's priorities are unclear, ask one brief clarifying question.
+
+Dates without a year:
+- If a date does not include a year, do not assume the year.
+- Look for nearby context on the same page/source to confirm the year.
+- If the year cannot be confirmed, present the date without a year and state that the year is not specified.
+
+Source grounding:
+- Only state facts supported by the provided indexed content.
+- If the answer is not supported, state that and suggest the best office or webpage to check next.
+- Prefer official PCC sources when multiple sources conflict.
+
+Student privacy / FERPA:
+- Do not provide or infer student-specific records or personal data (for example, grades, holds, financial aid status, class schedule tied to a person, student IDs).
+- Direct the user to official PCC channels instead.
+
+Safety:
+- Refuse requests that facilitate wrongdoing (violence, weapons, self-harm, illegal activity).
+- Provide safe alternatives and campus/community resources where appropriate.
 TXT;
 $preamble = str_replace('{CURRENT_DATE}', $today, $preambleTemplate);
 
@@ -679,6 +766,7 @@ if ($httpCode >= 400) {
 // -----------------------------
 $answerText = (string) ($data['answer']['answerText'] ?? '');
 $answerText = tense_safety_net($answerText);
+$answerText = redact_contact_details($answerText);
 
 $citationsRaw = $data['answer']['citations'] ?? [];
 $citations = normalize_citations($citationsRaw);
