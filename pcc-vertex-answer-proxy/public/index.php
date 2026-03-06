@@ -36,6 +36,55 @@ if ($documentRoot !== '') {
     .answer code { background: #f8f9fa; padding: 0 .2rem; border-radius: .25rem; }
     .citation-anchors a { text-decoration: none; margin-right: .25rem; }
     .reference-hit { background-color: #fff3cd; transition: background-color .6s ease; }
+    .pcc-launch-icon-wrap {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 9999px;
+      background: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      animation: pccIconBounceJiggle 2.5s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .pcc-launch-icon {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 9999px;
+      display: block;
+      object-fit: cover;
+    }
+    @keyframes pccIconBounceJiggle {
+      0%, 40% { transform: translateY(0) rotate(0deg); }
+      48% { transform: translateY(-6px) rotate(-5deg); }
+      54% { transform: translateY(0) rotate(4deg); }
+      60% { transform: translateY(-3px) rotate(-3deg); }
+      66% { transform: translateY(0) rotate(2deg); }
+      72% { transform: translateY(-1px) rotate(-1deg); }
+      78%, 100% { transform: translateY(0) rotate(0deg); }
+    }
+    .pcc-modal-title {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .pcc-modal-title-icon-wrap {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 9999px;
+      background: #f1f3f5;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+    .pcc-modal-title-icon {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 9999px;
+      object-fit: cover;
+      display: block;
+    }
   </style>
 </head>
 <body class="bg-light">
@@ -49,6 +98,9 @@ if ($documentRoot !== '') {
 
         <div class="card shadow-sm mb-3">
           <div class="card-body d-flex flex-wrap gap-2 align-items-center">
+            <span class="pcc-launch-icon-wrap" aria-hidden="true">
+              <img class="pcc-launch-icon" src="/images/lance-profile.png" alt="" />
+            </span>
             <button id="openAskModalBtn" class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#askModal">Ask a Question</button>
             <button id="newChatBtn" class="btn btn-outline-secondary" type="button">New chat</button>
             <div id="status" class="small-muted ms-md-2"></div>
@@ -63,7 +115,12 @@ if ($documentRoot !== '') {
   <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h2 class="modal-title h5" id="askModalLabel">Ask Lance O'Lot a Question</h2>
+        <h2 class="modal-title h5 pcc-modal-title" id="askModalLabel">
+          <span class="pcc-modal-title-icon-wrap" aria-hidden="true">
+            <img class="pcc-modal-title-icon" src="/images/lance-profile.png" alt="" />
+          </span>
+          <span>Ask Lance O'Lot a Question</span>
+        </h2>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
@@ -111,10 +168,10 @@ if ($documentRoot !== '') {
               <div id="followUps" class="d-flex flex-wrap gap-2"></div>
             </div>
 
-            <details class="mt-3">
-              <summary class="small-muted">Debug</summary>
+            <!-- Debug payload is kept in DOM for inspection but hidden from UI. -->
+            <div class="d-none" aria-hidden="true">
               <pre id="debug" class="mono small mt-2 mb-0"></pre>
-            </details>
+            </div>
           </div>
         </div>
       </div>
@@ -135,8 +192,9 @@ let activePopovers = [];
 function setLoading(isLoading) {
   $("#modalAskBtn").disabled = isLoading;
   $("#openAskModalBtn").disabled = isLoading;
-  $("#status").textContent = isLoading ? "Thinking… (Lance is trotting to the sources)" : "";
-  $("#modalStatus").textContent = isLoading ? "Thinking… (Lance is trotting to the sources)" : "";
+  const loadingHtml = '<span class="d-inline-flex align-items-center gap-1"><svg width="12" height="12" viewBox="0 0 50 50" aria-hidden="true"><circle cx="25" cy="25" r="20" fill="none" stroke="#be1e2d" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4"><animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="0.9s" repeatCount="indefinite"/></circle></svg><span>Thinking… (Lance is trotting to the sources)</span></span>';
+  $("#status").innerHTML = isLoading ? loadingHtml : "";
+  $("#modalStatus").innerHTML = isLoading ? loadingHtml : "";
 }
 
 function showError(msg) {

@@ -8,21 +8,87 @@
   const SESSION_KEY = "pcc_vertex_embed_session";
   const ROOT_ID = "pcc-vertex-widget";
   const MODAL_ID = "pccVertexWidgetModal";
+  const WIDGET_STYLE_ID = "pcc-vertex-widget-styles";
 
   if (document.getElementById(ROOT_ID)) return;
+
+  if (!document.getElementById(WIDGET_STYLE_ID)) {
+    const style = document.createElement("style");
+    style.id = WIDGET_STYLE_ID;
+    style.textContent = `
+      .pccw-launch-icon-wrap {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 9999px;
+        background: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        animation: pccwIconBounceJiggle 2.5s ease-in-out infinite;
+        pointer-events: none;
+      }
+      .pccw-launch-icon {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 9999px;
+        display: block;
+        object-fit: cover;
+      }
+      @keyframes pccwIconBounceJiggle {
+        0%, 40% { transform: translateY(0) rotate(0deg); }
+        48% { transform: translateY(-6px) rotate(-5deg); }
+        54% { transform: translateY(0) rotate(4deg); }
+        60% { transform: translateY(-3px) rotate(-3deg); }
+        66% { transform: translateY(0) rotate(2deg); }
+        72% { transform: translateY(-1px) rotate(-1deg); }
+        78%, 100% { transform: translateY(0) rotate(0deg); }
+      }
+      .pccw-modal-title {
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+      }
+      .pccw-modal-title-icon-wrap {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 9999px;
+        background: #f1f3f5;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+      }
+      .pccw-modal-title-icon {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 9999px;
+        object-fit: cover;
+        display: block;
+      }
+    `;
+    document.head.appendChild(style);
+  }
 
   const root = document.createElement("div");
   root.id = ROOT_ID;
   root.innerHTML = `
-    <button id="pccw-launch" type="button" class="btn btn-primary position-fixed bottom-0 end-0 m-4 shadow" data-bs-toggle="modal" data-bs-target="#${MODAL_ID}">
-      Ask a Question
-    </button>
+    <div class="position-fixed bottom-0 end-0 m-4 d-inline-flex align-items-center gap-2">
+      <span class="pccw-launch-icon-wrap" aria-hidden="true">
+        <img class="pccw-launch-icon" src="/images/lance-profile.png" alt="" />
+      </span>
+      <button id="pccw-launch" type="button" class="btn btn-primary shadow" data-bs-toggle="modal" data-bs-target="#${MODAL_ID}">Ask a Question</button>
+    </div>
 
     <div class="modal fade" id="${MODAL_ID}" tabindex="-1" aria-labelledby="${MODAL_ID}Label" aria-hidden="true">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
           <div class="modal-header">
-            <h2 class="modal-title h5" id="${MODAL_ID}Label">Ask Lance O'Lot a Question</h2>
+            <h2 class="modal-title h5 pccw-modal-title" id="${MODAL_ID}Label">
+              <span class="pccw-modal-title-icon-wrap" aria-hidden="true">
+                <img class="pccw-modal-title-icon" src="/images/lance-profile.png" alt="" />
+              </span>
+              <span>Ask Lance O'Lot a Question</span>
+            </h2>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
@@ -202,7 +268,8 @@
 
   function setLoading(on) {
     el.ask.disabled = on;
-    el.status.textContent = on ? "Thinking… (Lance is trotting to the sources)" : "";
+    const loadingHtml = '<span class="d-inline-flex align-items-center gap-1"><svg width="12" height="12" viewBox="0 0 50 50" aria-hidden="true"><circle cx="25" cy="25" r="20" fill="none" stroke="#be1e2d" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4"><animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="0.9s" repeatCount="indefinite"/></circle></svg><span>Thinking… (Lance is trotting to the sources)</span></span>';
+    el.status.innerHTML = on ? loadingHtml : "";
   }
 
   function resetForAsk() {

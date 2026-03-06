@@ -59,6 +59,82 @@ function write_json_file(string $path, array $data): void {
   file_put_contents($path, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 
+function reference_urls_for_log(array $citations, array $references, array $searchResults): string {
+  $seen = [];
+
+  $collect = function (array $items) use (&$seen): void {
+    foreach ($items as $item) {
+      if (!is_array($item)) {
+        continue;
+      }
+      $uri = trim((string) ($item['uri'] ?? ''));
+      if ($uri !== '') {
+        $seen[$uri] = true;
+      }
+    }
+  };
+
+  $collect($citations);
+  $collect($references);
+  $collect($searchResults);
+
+  return implode(' | ', array_keys($seen));
+}
+
+function append_help_centers_cta(string $answerText): string {
+  $ctaUrl = 'https://pasadena.edu/student-services/get-help/index.php';
+  $ctaLine = '<hr class="my-2" />' . "\n" . '<strong>Need additional help?</strong> <a href="' . $ctaUrl . '" target="_blank" rel="noopener noreferrer">Visit Help Centers & Support <span class="fa fa-arrow-right"></span></a>';
+
+  if (stripos($answerText, $ctaUrl) !== false) {
+    return $answerText;
+  }
+
+  $trimmed = rtrim($answerText);
+  if ($trimmed === '') {
+    return $ctaLine;
+  }
+
+  return $trimmed . "\n\n" . $ctaLine;
+}
+
+function append_question_log_csv(
+  string $path,
+  string $question,
+  string $answer,
+  string $timestamp,
+  array $citations,
+  array $references,
+  array $searchResults
+): void {
+  ensure_dir(dirname($path));
+
+  $fh = fopen($path, 'ab');
+  if ($fh === false) {
+    error_log('CSV log write failed (fopen): ' . $path);
+    return;
+  }
+
+  if (!flock($fh, LOCK_EX)) {
+    error_log('CSV log write failed (flock): ' . $path);
+    fclose($fh);
+    return;
+  }
+
+  if (ftell($fh) === 0) {
+    fputcsv($fh, ['question', 'answer', 'timestamp', 'reference_urls']);
+  }
+  fputcsv($fh, [
+    $question,
+    $answer,
+    $timestamp,
+    reference_urls_for_log($citations, $references, $searchResults),
+  ]);
+  fflush($fh);
+  flock($fh, LOCK_UN);
+
+  fclose($fh);
+}
+
 function b64url_encode(string $data): string {
   return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
 }
@@ -589,6 +665,17 @@ $cachePath = $cacheDir . '/' . $cacheKey . '.json';
 if ($cacheEnabled && is_readable($cachePath)) {
   $cached = read_json_file($cachePath);
   if ($cached && isset($cached['ts']) && (time() - (int) $cached['ts'] <= $cacheTtl)) {
+    $cachedAnswer = append_help_centers_cta((string) ($cached['answer'] ?? ''));
+    $cached['answer'] = $cachedAnswer;
+    append_question_log_csv(
+      $logDir . '/question_log.csv',
+      $q,
+      $cachedAnswer,
+      date('c'),
+      is_array($cached['citations'] ?? null) ? $cached['citations'] : [],
+      is_array($cached['references'] ?? null) ? $cached['references'] : [],
+      is_array($cached['search_results'] ?? null) ? $cached['search_results'] : []
+    );
     $cached['meta']['cache'] = 'HIT';
     json_out($cached, 200);
   }
@@ -785,6 +872,7 @@ $sessionOut = (string) (
 if (is_summary_fallback_message($answerText)) {
   $answerText = format_search_results_fallback($searchResults);
 }
+$answerText = append_help_centers_cta($answerText);
 
 // -----------------------------
 // Log
@@ -801,6 +889,16 @@ $logLine = json_encode([
   'http' => $httpCode,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 file_put_contents($logDir . '/requests.log', $logLine . PHP_EOL, FILE_APPEND);
+
+append_question_log_csv(
+  $logDir . '/question_log.csv',
+  $q,
+  $answerText,
+  date('c'),
+  $citations,
+  $references,
+  $searchResults
+);
 
 // -----------------------------
 // Output + cache store
