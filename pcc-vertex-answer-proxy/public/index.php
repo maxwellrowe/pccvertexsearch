@@ -31,7 +31,6 @@ if ($documentRoot !== '') {
   <style>
     .small-muted { font-size: .9rem; color: #6c757d; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    .answer { white-space: pre-wrap; }
     .answer p:last-child { margin-bottom: 0; }
     .answer code { background: #f8f9fa; padding: 0 .2rem; border-radius: .25rem; }
     .citation-anchors a { text-decoration: none; margin-right: .25rem; }
@@ -124,9 +123,9 @@ if ($documentRoot !== '') {
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <div class="d-flex gap-2 align-items-end">
-          <div class="flex-grow-1">
-            <label class="form-label" for="q">What would you like to ask?</label>
+        <div id="askControls" class="d-flex gap-2 align-items-end">
+          <div id="qWrap" class="flex-grow-1">
+            <label id="qLabel" class="form-label" for="q">What would you like to ask?</label>
             <input id="q" class="form-control" type="text" placeholder="e.g., how do I get started at PCC?" />
           </div>
           <button id="modalAskBtn" class="btn btn-primary" type="button">Ask</button>
@@ -142,7 +141,13 @@ if ($documentRoot !== '') {
                 <h2 class="h6 mb-0">Answer</h2>
                 <a id="metaLink" class="small d-none" href="#searchWrap">View Search Results</a>
               </div>
-              <div id="answer" class="answer"></div>
+              <div id="answer" class="answer">
+                <div id="answerBody"></div>
+                <div id="askAnotherWrap" class="d-none mt-3">
+                  <button id="askAnotherBtn" class="btn btn-outline-primary" type="button">Ask Another Question</button>
+                </div>
+                <div id="answerHelp" class="mt-3"></div>
+              </div>
             </div>
             <div id="answerCitations" class="citation-anchors small d-none mb-2"></div>
 
@@ -189,6 +194,21 @@ const API_ENDPOINT = <?= json_encode($apiEndpoint, JSON_UNESCAPED_SLASHES) ?>;
 let referenceLookup = new Map();
 let activePopovers = [];
 
+function setAskControlsVisible(isVisible) {
+  $("#askControls").classList.toggle("d-none", !isVisible);
+  $("#qWrap").hidden = !isVisible;
+  $("#qLabel").hidden = !isVisible;
+  $("#q").hidden = !isVisible;
+  $("#modalAskBtn").hidden = !isVisible;
+  $("#askAnotherWrap").classList.toggle("d-none", isVisible);
+}
+
+function focusQuestionInput() {
+  const input = $("#q");
+  input.focus({ preventScroll: true });
+  input.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 function setLoading(isLoading) {
   $("#modalAskBtn").disabled = isLoading;
   $("#openAskModalBtn").disabled = isLoading;
@@ -208,20 +228,32 @@ function clearError() {
 }
 
 function renderAnswerText(text) {
-  const answerEl = $("#answer");
+  const answerEl = $("#answerBody");
+  const helpEl = $("#answerHelp");
   const raw = String(text || "");
   if (!raw) {
     answerEl.textContent = "(No answer returned.)";
+    helpEl.innerHTML = "";
     return;
   }
 
+  const ctaMatch = raw.match(/<hr class="my-2"\s*\/>\s*<strong>Need additional help\?<\/strong>[\s\S]*$/i);
+  const bodyRaw = ctaMatch ? raw.slice(0, ctaMatch.index).trimEnd() : raw;
+  const helpRaw = ctaMatch ? ctaMatch[0] : "";
+
   try {
-    const html = marked.parse(raw, { breaks: true, gfm: true });
+    const html = marked.parse(bodyRaw, { breaks: true, gfm: true });
     answerEl.innerHTML = DOMPurify.sanitize(html);
     answerEl.style.whiteSpace = "normal";
+    if (helpRaw) {
+      helpEl.innerHTML = DOMPurify.sanitize(helpRaw);
+    } else {
+      helpEl.innerHTML = "";
+    }
   } catch (e) {
-    answerEl.textContent = raw;
+    answerEl.textContent = bodyRaw;
     answerEl.style.whiteSpace = "pre-wrap";
+    helpEl.innerHTML = helpRaw || "";
   }
 }
 
@@ -426,6 +458,7 @@ function renderAnswerCitations(citations) {
 async function ask(prefillQuestion = null) {
   clearError();
   resetPopovers();
+  setAskControlsVisible(true);
   $("#result").classList.add("d-none");
   $("#debug").textContent = "";
   $("#metaLink").classList.add("d-none");
@@ -433,6 +466,7 @@ async function ask(prefillQuestion = null) {
   $("#questionPill").classList.add("d-none");
   $("#answerCitations").classList.add("d-none");
   $("#answerCitations").innerHTML = "";
+  $("#answerHelp").innerHTML = "";
 
   const q = String(prefillQuestion || $("#q").value).trim();
   if (!q) return showError("Please enter a question.");
@@ -444,7 +478,7 @@ async function ask(prefillQuestion = null) {
       const res = await fetch(API_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body: new URLSearchParams({ q, sid }),
+        body: new URLSearchParams({ q, sid, page_url: window.location.href }),
       });
       const data = await res.json().catch(() => ({}));
       return { res, data };
@@ -479,8 +513,8 @@ async function ask(prefillQuestion = null) {
       localStorage.setItem(SESSION_KEY, data.meta.session);
     }
     $("#q").value = "";
-    $("#q").focus();
     $("#result").classList.remove("d-none");
+    setAskControlsVisible(false);
   } catch (e) {
     showError(e?.message || "Something went wrong.");
   } finally {
@@ -496,6 +530,11 @@ $("#newChatBtn").addEventListener("click", () => {
   localStorage.removeItem(SESSION_KEY);
   $("#status").textContent = "Started a new chat session.";
   $("#modalStatus").textContent = "";
+  setAskControlsVisible(true);
+});
+$("#askAnotherBtn").addEventListener("click", () => {
+  setAskControlsVisible(true);
+  focusQuestionInput();
 });
 </script>
 </body>

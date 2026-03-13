@@ -19,6 +19,25 @@ function ensure_dir(string $path): void {
   }
 }
 
+function resolve_writable_dir(array $candidates): ?string {
+  foreach ($candidates as $candidate) {
+    $dir = rtrim((string) $candidate, '/');
+    if ($dir === '') {
+      continue;
+    }
+    if (is_dir($dir)) {
+      if (is_writable($dir)) {
+        return $dir;
+      }
+      continue;
+    }
+    if (@mkdir($dir, 0775, true) && is_writable($dir)) {
+      return $dir;
+    }
+  }
+  return null;
+}
+
 function client_ip(): string {
   // Prefer X-Forwarded-For if behind ALB/CloudFront, otherwise REMOTE_ADDR
   $xff = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? '';
@@ -29,6 +48,30 @@ function client_ip(): string {
     }
   }
   return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+}
+
+function request_page_url(): string {
+  $candidate = trim((string) ($_POST['page_url'] ?? ''));
+  if ($candidate !== '') {
+    if (mb_strlen($candidate) > 2048) {
+      $candidate = mb_substr($candidate, 0, 2048);
+    }
+    return $candidate;
+  }
+
+  $referer = trim((string) ($_SERVER['HTTP_REFERER'] ?? ''));
+  if ($referer !== '') {
+    return mb_strlen($referer) > 2048 ? mb_substr($referer, 0, 2048) : $referer;
+  }
+
+  $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+  $host = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
+  $uri = trim((string) ($_SERVER['REQUEST_URI'] ?? ''));
+  if ($host !== '' && $uri !== '') {
+    return $scheme . '://' . $host . $uri;
+  }
+
+  return '';
 }
 
 function origin_allowed(string $origin, array $allowlist): bool {
@@ -102,6 +145,8 @@ function append_question_log_csv(
   string $question,
   string $answer,
   string $timestamp,
+  string $pageUrl,
+  string $ipAddress,
   array $citations,
   array $references,
   array $searchResults
@@ -121,18 +166,64 @@ function append_question_log_csv(
   }
 
   if (ftell($fh) === 0) {
-    fputcsv($fh, ['question', 'answer', 'timestamp', 'reference_urls']);
+    fputcsv($fh, ['question', 'answer', 'timestamp', 'page_url', 'ip_address', 'reference_urls']);
   }
   fputcsv($fh, [
     $question,
     $answer,
     $timestamp,
+    $pageUrl,
+    $ipAddress,
     reference_urls_for_log($citations, $references, $searchResults),
   ]);
   fflush($fh);
   flock($fh, LOCK_UN);
 
   fclose($fh);
+}
+
+function post_google_sheets_log(array $sheetConfig, array $payload): void {
+  $enabled = ($sheetConfig['enabled'] ?? false) === true;
+  $url = trim((string) ($sheetConfig['webhook_url'] ?? ''));
+  if (!$enabled || $url === '') {
+    return;
+  }
+
+  $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  if (!is_string($json) || $json === '') {
+    return;
+  }
+
+  $headers = ['Content-Type: application/json'];
+  $token = trim((string) ($sheetConfig['webhook_token'] ?? ''));
+  $postUrl = $url;
+  if ($token !== '' && stripos($url, 'token=') === false) {
+    $postUrl .= (str_contains($url, '?') ? '&' : '?') . 'token=' . rawurlencode($token);
+  }
+  if ($token !== '') {
+    $headers[] = 'X-Webhook-Token: ' . $token;
+  }
+
+  $timeout = max(1, (int) ($sheetConfig['timeout_seconds'] ?? 3));
+
+  $ch = curl_init($postUrl);
+  curl_setopt_array($ch, [
+    CURLOPT_POST => true,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_HTTPHEADER => $headers,
+    CURLOPT_POSTFIELDS => $json,
+    CURLOPT_CONNECTTIMEOUT => min(2, $timeout),
+    CURLOPT_TIMEOUT => $timeout,
+  ]);
+  $response = curl_exec($ch);
+  $errNo = curl_errno($ch);
+  $err = curl_error($ch);
+  $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  curl_close($ch);
+
+  if ($errNo || $status >= 400) {
+    error_log('Google Sheets log webhook failed. HTTP ' . $status . ' curl_errno=' . $errNo . ' err=' . $err . ' body=' . (string) $response);
+  }
 }
 
 function b64url_encode(string $data): string {
@@ -558,10 +649,15 @@ $config = require __DIR__ . '/../../config/config.php';
 $storageBase = realpath(__DIR__ . '/../../storage') ?: (__DIR__ . '/../../storage');
 $cacheDir = $storageBase . '/cache';
 $rateDir = $storageBase . '/rate';
-$logDir = $storageBase . '/logs';
+$preferredLogDir = $storageBase . '/logs';
+$tmpLogDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . '/pcc-vertex-answer-proxy/logs';
+$resolvedLogDir = resolve_writable_dir([$preferredLogDir, $tmpLogDir]);
+$logDir = $resolvedLogDir ?: $preferredLogDir;
 ensure_dir($cacheDir);
 ensure_dir($rateDir);
-ensure_dir($logDir);
+if (!$resolvedLogDir) {
+  error_log('No writable log directory found. Tried: ' . $preferredLogDir . ' | ' . $tmpLogDir);
+}
 
 // -----------------------------
 // Security headers
@@ -601,6 +697,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 // Rate limiting
 // -----------------------------
 $ip = client_ip();
+$pageUrl = request_page_url();
 if (($config['rate']['enabled'] ?? true) === true) {
   $cap = (int) ($config['rate']['capacity'] ?? 20);
   $ref = (int) ($config['rate']['refill_per_min'] ?? 20);
@@ -665,17 +762,36 @@ $cachePath = $cacheDir . '/' . $cacheKey . '.json';
 if ($cacheEnabled && is_readable($cachePath)) {
   $cached = read_json_file($cachePath);
   if ($cached && isset($cached['ts']) && (time() - (int) $cached['ts'] <= $cacheTtl)) {
+    $logTimestamp = date('c');
     $cachedAnswer = append_help_centers_cta((string) ($cached['answer'] ?? ''));
     $cached['answer'] = $cachedAnswer;
     append_question_log_csv(
       $logDir . '/question_log.csv',
       $q,
       $cachedAnswer,
-      date('c'),
+      $logTimestamp,
+      $pageUrl,
+      $ip,
       is_array($cached['citations'] ?? null) ? $cached['citations'] : [],
       is_array($cached['references'] ?? null) ? $cached['references'] : [],
       is_array($cached['search_results'] ?? null) ? $cached['search_results'] : []
     );
+    post_google_sheets_log(($config['google_sheets_log'] ?? []), [
+      'timestamp' => $logTimestamp,
+      'question' => $q,
+      'answer' => $cachedAnswer,
+      'reference_urls' => reference_urls_for_log(
+        is_array($cached['citations'] ?? null) ? $cached['citations'] : [],
+        is_array($cached['references'] ?? null) ? $cached['references'] : [],
+        is_array($cached['search_results'] ?? null) ? $cached['search_results'] : []
+      ),
+      'cache' => 'HIT',
+      'sid' => $sidRaw,
+      'session' => (string) (($cached['meta']['session'] ?? '') ?: ''),
+      'page_url' => $pageUrl,
+      'ip' => $ip,
+      'ip_address' => $ip,
+    ]);
     $cached['meta']['cache'] = 'HIT';
     json_out($cached, 200);
   }
@@ -764,6 +880,12 @@ Source grounding:
 Student privacy / FERPA:
 - Do not provide or infer student-specific records or personal data (for example, grades, holds, financial aid status, class schedule tied to a person, student IDs).
 - Direct the user to official PCC channels instead.
+
+Conversation closing guidance:
+- Do not end responses with prompts encouraging additional questions (for example: "How can I help you?", "Is there anything else I can help you with?", "Ask another question," or similar).
+- Provide the answer and end the response without inviting further interaction.
+- Only ask a follow-up question when clarification is strictly necessary to answer the user's question.
+- Avoid conversational closings that encourage continued dialogue.
 
 Safety:
 - Refuse requests that facilitate wrongdoing (violence, weapons, self-harm, illegal activity).
@@ -887,18 +1009,34 @@ $logLine = json_encode([
   'elapsed_ms' => $elapsedMs,
   'cache' => 'MISS',
   'http' => $httpCode,
+  'page_url' => $pageUrl,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 file_put_contents($logDir . '/requests.log', $logLine . PHP_EOL, FILE_APPEND);
 
+$logTimestamp = date('c');
 append_question_log_csv(
   $logDir . '/question_log.csv',
   $q,
   $answerText,
-  date('c'),
+  $logTimestamp,
+  $pageUrl,
+  $ip,
   $citations,
   $references,
   $searchResults
 );
+post_google_sheets_log(($config['google_sheets_log'] ?? []), [
+  'timestamp' => $logTimestamp,
+  'question' => $q,
+  'answer' => $answerText,
+  'reference_urls' => reference_urls_for_log($citations, $references, $searchResults),
+  'cache' => 'MISS',
+  'sid' => $sidRaw,
+  'session' => (string) ($sessionOut ?: $session),
+  'page_url' => $pageUrl,
+  'ip' => $ip,
+  'ip_address' => $ip,
+]);
 
 // -----------------------------
 // Output + cache store

@@ -41,4 +41,19 @@ return [
     'enabled' => env('PCC_DEBUG', '0') === '1',
     'return_raw' => env('PCC_DEBUG_RETURN_RAW', '0') === '1',
   ],
+
+  // Optional Google Sheets webhook logging (Apps Script web app URL)
+  'google_sheets_log' => [
+    // File-based defaults are set so this can run even when env vars are unavailable.
+    'enabled' => env('PCC_GSHEETS_LOG_ENABLED', '1') === '1',
+    'webhook_url' => env(
+      'PCC_GSHEETS_WEBHOOK_URL',
+      'https://script.google.com/macros/s/AKfycbzaGtQ52dmtmUOCaFihUHj539L4zb5qh419Pjjc4A5jeA0sFk25xw1BowkkSDvX2WvxbA/exec'
+    ),
+    'webhook_token' => env(
+      'PCC_GSHEETS_WEBHOOK_TOKEN',
+      '1287c1d1db625ffe6dcbd46aa264db1d93b6b39524b21c9be925a4e707de4ea6'
+    ),
+    'timeout_seconds' => (int) env('PCC_GSHEETS_TIMEOUT_SECONDS', '3'),
+  ],
 ];

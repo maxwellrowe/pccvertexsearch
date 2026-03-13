@@ -92,9 +92,9 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <div class="d-flex gap-2 align-items-end">
-              <div class="flex-grow-1">
-                <label class="form-label" for="pccw-q">What would you like to ask?</label>
+            <div id="pccw-ask-controls" class="d-flex gap-2 align-items-end">
+              <div id="pccw-q-wrap" class="flex-grow-1">
+                <label id="pccw-q-label" class="form-label" for="pccw-q">What would you like to ask?</label>
                 <input id="pccw-q" class="form-control" type="text" placeholder="e.g., how do I get started at PCC?" />
               </div>
               <button type="button" id="pccw-ask" class="btn btn-primary">Ask</button>
@@ -110,7 +110,13 @@
                     <h3 class="h6 mb-0">Answer</h3>
                     <a id="pccw-meta-link" class="small d-none" href="#pccw-search-wrap">View Search Results</a>
                   </div>
-                  <div id="pccw-answer"></div>
+                  <div id="pccw-answer">
+                    <div id="pccw-answer-body"></div>
+                    <div id="pccw-ask-another-wrap" class="d-none mt-3">
+                      <button type="button" id="pccw-ask-another" class="btn btn-outline-primary">Ask Another Question</button>
+                    </div>
+                    <div id="pccw-answer-help" class="mt-3"></div>
+                  </div>
                 </div>
                 <div id="pccw-anchors" class="small d-none mb-2"></div>
 
@@ -135,6 +141,7 @@
                   <h4 class="h6">Follow-up questions</h4>
                   <div id="pccw-fu" class="d-flex flex-wrap gap-2"></div>
                 </div>
+
               </div>
             </div>
           </div>
@@ -152,6 +159,11 @@
     modal: root.querySelector(`#${MODAL_ID}`),
     q: root.querySelector("#pccw-q"),
     ask: root.querySelector("#pccw-ask"),
+    qWrap: root.querySelector("#pccw-q-wrap"),
+    qLabel: root.querySelector("#pccw-q-label"),
+    askControls: root.querySelector("#pccw-ask-controls"),
+    askAnotherWrap: root.querySelector("#pccw-ask-another-wrap"),
+    askAnother: root.querySelector("#pccw-ask-another"),
     newChat: root.querySelector("#pccw-new"),
     status: root.querySelector("#pccw-status"),
     error: root.querySelector("#pccw-error"),
@@ -159,6 +171,8 @@
     questionPill: root.querySelector("#pccw-question-pill"),
     metaLink: root.querySelector("#pccw-meta-link"),
     answer: root.querySelector("#pccw-answer"),
+    answerBody: root.querySelector("#pccw-answer-body"),
+    answerHelp: root.querySelector("#pccw-answer-help"),
     anchors: root.querySelector("#pccw-anchors"),
     citesWrap: root.querySelector("#pccw-cites-wrap"),
     cites: root.querySelector("#pccw-cites"),
@@ -172,6 +186,20 @@
   let widgetModal = null;
   let referenceLookup = new Map();
   let markdownLoadPromise = null;
+
+  function setAskControlsVisible(isVisible) {
+    el.askControls.classList.toggle("d-none", !isVisible);
+    el.qWrap.hidden = !isVisible;
+    el.qLabel.hidden = !isVisible;
+    el.q.hidden = !isVisible;
+    el.ask.hidden = !isVisible;
+    el.askAnotherWrap.classList.toggle("d-none", isVisible);
+  }
+
+  function focusQuestionInput() {
+    el.q.focus({ preventScroll: true });
+    el.q.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
   function loadBootstrapBundle() {
     return new Promise((resolve, reject) => {
@@ -278,7 +306,8 @@
     el.questionPill.textContent = "";
     el.questionPill.classList.add("d-none");
     el.metaLink.classList.add("d-none");
-    el.answer.textContent = "";
+    el.answerBody.textContent = "";
+    el.answerHelp.innerHTML = "";
 
     el.anchors.innerHTML = "";
     el.anchors.classList.add("d-none");
@@ -301,19 +330,26 @@
   function renderAnswer(raw) {
     const text = String(raw || "");
     if (!text) {
-      el.answer.textContent = "(No answer returned.)";
+      el.answerBody.textContent = "(No answer returned.)";
+      el.answerHelp.innerHTML = "";
       return;
     }
 
+    const ctaMatch = text.match(/<hr class="my-2"\s*\/>\s*<strong>Need additional help\?<\/strong>[\s\S]*$/i);
+    const bodyRaw = ctaMatch ? text.slice(0, ctaMatch.index).trimEnd() : text;
+    const helpRaw = ctaMatch ? ctaMatch[0] : "";
+
     if (window.marked && window.DOMPurify) {
       try {
-        const html = window.marked.parse(text, { breaks: true, gfm: true });
-        el.answer.innerHTML = window.DOMPurify.sanitize(html);
+        const html = window.marked.parse(bodyRaw, { breaks: true, gfm: true });
+        el.answerBody.innerHTML = window.DOMPurify.sanitize(html);
+        el.answerHelp.innerHTML = helpRaw ? window.DOMPurify.sanitize(helpRaw) : "";
         return;
       } catch (e) {}
     }
 
-    el.answer.innerHTML = escapeHtml(text).replace(/\n/g, "<br>");
+    el.answerBody.innerHTML = escapeHtml(bodyRaw).replace(/\n/g, "<br>");
+    el.answerHelp.innerHTML = helpRaw || "";
   }
 
   function renderQuestionPill(question) {
@@ -482,6 +518,7 @@
     }
     await ensureMarkdownReady();
     widgetModal.show();
+    setAskControlsVisible(true);
     resetForAsk();
     setLoading(true);
 
@@ -490,7 +527,7 @@
         const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-          body: new URLSearchParams({ q: text, sid }),
+          body: new URLSearchParams({ q: text, sid, page_url: window.location.href }),
           credentials: "omit"
         });
         const data = await res.json().catch(() => ({}));
@@ -526,7 +563,7 @@
       }
       el.result.classList.remove("d-none");
       el.q.value = "";
-      el.q.focus();
+      setAskControlsVisible(false);
       el.status.textContent = "";
     } catch (e) {
       setError(e?.message || "Something went wrong.");
@@ -557,6 +594,11 @@
     localStorage.removeItem(SESSION_KEY);
     setError("");
     el.status.textContent = "Started a new chat session.";
+    setAskControlsVisible(true);
+  });
+  el.askAnother.addEventListener("click", () => {
+    setAskControlsVisible(true);
+    focusQuestionInput();
   });
 
   // Preload modal support in background when possible.
