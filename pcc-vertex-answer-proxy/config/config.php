@@ -11,10 +11,12 @@ return [
   'project_id' => env('PCC_GCP_PROJECT_ID', 'pcc-success-cent-1530898874821'),
   'location'   => env('PCC_DISCOVERY_LOCATION', 'us'),
   'engine_id'  => env('PCC_DISCOVERY_ENGINE_ID', 'pcc-test-ai-agent-search_1767107861879'),
+  'data_store_id' => env('PCC_DISCOVERY_DATA_STORE_ID', 'pcc-website_1767107779222'),
 
   // Regional endpoint for locations/us
   // Using us-discoveryengine.googleapis.com is commonly required for us multi-region resources.
   'api_host'   => env('PCC_DISCOVERY_API_HOST', 'https://us-discoveryengine.googleapis.com'),
+  'recrawl_api_host' => env('PCC_DISCOVERY_RECRAWL_API_HOST', 'https://discoveryengine.googleapis.com'),
 
   // Service account JSON path (server-side only)
   'service_account_json' => env('GOOGLE_APPLICATION_CREDENTIALS', __DIR__ . '/service-account.json'),
@@ -40,6 +42,28 @@ return [
   'debug' => [
     'enabled' => env('PCC_DEBUG', '0') === '1',
     'return_raw' => env('PCC_DEBUG_RETURN_RAW', '0') === '1',
+  ],
+
+  // Protected scheduler-triggered recrawl jobs
+  'scheduler' => [
+    'secret' => env('PCC_SCHEDULER_SECRET', '9f4c2b8e1d7a6c3f5e8b2a1d4c6f7b9a2e5d8c1f4a7b6c3d9e2f5a8b1c4d7e6'),
+    'header_name' => env('PCC_SCHEDULER_SECRET_HEADER', 'X-Scheduler-Secret'),
+  ],
+
+  'recrawl' => [
+    'jobs' => [
+      'daily_crawl' => [
+        'https://pasadena.edu/',
+        'https://pasadena.edu/current-students/guide-to-spring.php',
+        'https://pasadena.edu/future-students/winter.php',
+        'https://pasadena.edu/current-students/guide-to-fall.php',
+        'https://pasadena.edu/current-students/guide-to-summer.php',
+        'https://pasadena.edu/calendars/index.php',
+        'https://pasadena.edu/calendars/registration.php',
+        'https://pasadena.edu/calendars/exam-calendars.php',
+        'https://pasadena.edu/calendars/academic.php',
+      ],
+    ],
   ],
 
   // Optional Google Sheets webhook logging (Apps Script web app URL)

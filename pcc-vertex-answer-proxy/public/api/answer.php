@@ -140,6 +140,110 @@ function append_help_centers_cta(string $answerText): string {
   return $trimmed . "\n\n" . $ctaLine;
 }
 
+function is_linkable_url(string $url): bool {
+  return preg_match('~^https?://~i', $url) === 1;
+}
+
+function linkify_plain_urls(string $text): string {
+  $pattern = '~(?<!["\'=])(https?://[^\s<]+[^\s<\)\]\}\.,;:!?])~i';
+
+  return (string) preg_replace_callback($pattern, function (array $matches): string {
+    $url = trim((string) ($matches[1] ?? ''));
+    if ($url === '' || !is_linkable_url($url)) {
+      return (string) ($matches[0] ?? '');
+    }
+
+    return '<a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" target="_blank" rel="noopener noreferrer">' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '</a>';
+  }, $text);
+}
+
+function cta_link_targets(array $citations, array $references, array $searchResults): array {
+  $candidates = array_merge($references, $citations, $searchResults);
+  $targets = [];
+  $seen = [];
+
+  foreach ($candidates as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+
+    $title = trim((string) ($item['title'] ?? ''));
+    $uri = trim((string) ($item['uri'] ?? ''));
+    if ($title === '' || $uri === '' || !is_linkable_url($uri)) {
+      continue;
+    }
+    if (mb_strlen($title) < 4) {
+      continue;
+    }
+
+    $key = mb_strtolower($title);
+    if (isset($seen[$key])) {
+      continue;
+    }
+
+    $seen[$key] = true;
+    $targets[] = ['title' => $title, 'uri' => $uri];
+  }
+
+  usort($targets, static function (array $a, array $b): int {
+    return mb_strlen($b['title']) <=> mb_strlen($a['title']);
+  });
+
+  return array_slice($targets, 0, 12);
+}
+
+function linkify_cta_titles(string $text, array $targets): string {
+  $verbs = '(?:visit|check|review|see|open|go to|contact|explore|use|complete|submit|apply through|learn more about)';
+
+  foreach ($targets as $target) {
+    $title = (string) ($target['title'] ?? '');
+    $uri = (string) ($target['uri'] ?? '');
+    if ($title === '' || $uri === '') {
+      continue;
+    }
+
+    $pattern = '/\b(' . $verbs . ')\s+(the\s+)?(' . preg_quote($title, '/') . ')\b/iu';
+    $replacementCount = 0;
+    $text = (string) preg_replace_callback(
+      $pattern,
+      static function (array $matches) use ($uri): string {
+        $verb = (string) ($matches[1] ?? '');
+        $article = (string) ($matches[2] ?? '');
+        $label = (string) ($matches[3] ?? '');
+        $safeUri = htmlspecialchars($uri, ENT_QUOTES, 'UTF-8');
+        $safeLabel = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+        return $verb . ' ' . $article . '<a href="' . $safeUri . '" target="_blank" rel="noopener noreferrer">' . $safeLabel . '</a>';
+      },
+      $text,
+      1,
+      $replacementCount
+    );
+  }
+
+  return $text;
+}
+
+function linkify_answer_text(string $answerText, array $citations, array $references, array $searchResults): string {
+  $targets = cta_link_targets($citations, $references, $searchResults);
+  $parts = preg_split('/(<[^>]+>)/', $answerText, -1, PREG_SPLIT_DELIM_CAPTURE);
+  if (!is_array($parts)) {
+    return $answerText;
+  }
+
+  foreach ($parts as $idx => $part) {
+    if ($part === '' || $part[0] === '<') {
+      continue;
+    }
+    $part = linkify_plain_urls($part);
+    if ($targets) {
+      $part = linkify_cta_titles($part, $targets);
+    }
+    $parts[$idx] = $part;
+  }
+
+  return implode('', $parts);
+}
+
 function append_question_log_csv(
   string $path,
   string $question,
@@ -763,7 +867,13 @@ if ($cacheEnabled && is_readable($cachePath)) {
   $cached = read_json_file($cachePath);
   if ($cached && isset($cached['ts']) && (time() - (int) $cached['ts'] <= $cacheTtl)) {
     $logTimestamp = date('c');
-    $cachedAnswer = append_help_centers_cta((string) ($cached['answer'] ?? ''));
+    $cachedAnswer = linkify_answer_text(
+      (string) ($cached['answer'] ?? ''),
+      is_array($cached['citations'] ?? null) ? $cached['citations'] : [],
+      is_array($cached['references'] ?? null) ? $cached['references'] : [],
+      is_array($cached['search_results'] ?? null) ? $cached['search_results'] : []
+    );
+    $cachedAnswer = append_help_centers_cta($cachedAnswer);
     $cached['answer'] = $cachedAnswer;
     append_question_log_csv(
       $logDir . '/question_log.csv',
@@ -890,6 +1000,38 @@ Conversation closing guidance:
 Safety:
 - Refuse requests that facilitate wrongdoing (violence, weapons, self-harm, illegal activity).
 - Provide safe alternatives and campus/community resources where appropriate.
+
+Guidance and routing behavior:
+
+When responding to student questions, prioritize helping the user take the next step rather than providing exhaustive explanations.
+
+For most responses:
+- Include 1–3 clear, actionable next steps when applicable.
+- When a question involves a process (for example: applying, registering, choosing classes, accessing systems), briefly outline the typical sequence of steps if helpful.
+- When the answer depends on a student’s individual situation, clearly direct the user to the appropriate PCC office or service.
+
+Routing expectations:
+- When appropriate, guide the user to the most relevant resource
+- If there is no specific resource or office, direct them to Help Centers and Support [https://pasadena.edu/student-services/get-help/index.php]
+- Prefer directing to an office, department, or official PCC webpage rather than providing individualized advice.
+- Do not attempt to replace a counselor or make personalized academic decisions.
+
+Clarity and momentum:
+- Avoid answers that end without direction.
+- Ensure the user understands what they can do next, even if the answer is high-level.
+- If the user’s situation is unclear, include one brief conditional statement (for example: "If you’ve already applied…") rather than asking multiple follow-up questions.
+
+Boundaries:
+- Do not provide personalized advising, course recommendations, or decisions that require a counselor’s input.
+- Instead, explain the general context and guide the user to the appropriate resource for individualized support.
+
+Links and call-to-action behavior:
+
+- When directing the user to take an action (for example: apply, register, log in, contact an office, schedule an appointment), include a relevant URL when available.
+- Always pair links with a clear instruction describing what the user should do on that page.
+- Use full URLs (https://...) so they are clickable in most interfaces.
+- Limit to 1–2 links per response and only include links that directly support the next step.
+- Do not include links without context or explanation.
 TXT;
 $preamble = str_replace('{CURRENT_DATE}', $today, $preambleTemplate);
 
@@ -994,6 +1136,7 @@ $sessionOut = (string) (
 if (is_summary_fallback_message($answerText)) {
   $answerText = format_search_results_fallback($searchResults);
 }
+$answerText = linkify_answer_text($answerText, $citations, $references, $searchResults);
 $answerText = append_help_centers_cta($answerText);
 
 // -----------------------------
