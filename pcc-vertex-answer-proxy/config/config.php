@@ -16,7 +16,7 @@ return [
   // Regional endpoint for locations/us
   // Using us-discoveryengine.googleapis.com is commonly required for us multi-region resources.
   'api_host'   => env('PCC_DISCOVERY_API_HOST', 'https://us-discoveryengine.googleapis.com'),
-  'recrawl_api_host' => env('PCC_DISCOVERY_RECRAWL_API_HOST', 'https://discoveryengine.googleapis.com'),
+  'recrawl_api_host' => env('PCC_DISCOVERY_RECRAWL_API_HOST', 'https://us-discoveryengine.googleapis.com'),
 
   // Service account JSON path (server-side only)
   'service_account_json' => env('GOOGLE_APPLICATION_CREDENTIALS', __DIR__ . '/service-account.json'),
@@ -46,7 +46,7 @@ return [
 
   // Protected scheduler-triggered recrawl jobs
   'scheduler' => [
-    'secret' => env('PCC_SCHEDULER_SECRET', '9f4c2b8e1d7a6c3f5e8b2a1d4c6f7b9a2e5d8c1f4a7b6c3d9e2f5a8b1c4d7e6'),
+    'secret' => env('PCC_SCHEDULER_SECRET', ''),
     'header_name' => env('PCC_SCHEDULER_SECRET_HEADER', 'X-Scheduler-Secret'),
   ],
 
