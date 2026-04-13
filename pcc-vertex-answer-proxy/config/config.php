@@ -46,7 +46,7 @@ return [
 
   // Protected scheduler-triggered recrawl jobs
   'scheduler' => [
-    'secret' => env('PCC_SCHEDULER_SECRET', '9f4c2b8e1d7a6c3f5e8b2a1d4c6f7b9a2e5d8c1f4a7b6c3d9e2f5a8b1c4d7e6'),
+    'secret' => env('PCC_SCHEDULER_SECRET', ''),
     'header_name' => env('PCC_SCHEDULER_SECRET_HEADER', 'X-Scheduler-Secret'),
   ],
 
