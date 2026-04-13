@@ -5,14 +5,17 @@ if ($scriptDir === '' || $scriptDir === '.') {
 }
 $scriptDir = rtrim($scriptDir, '/');
 $apiEndpoint = ($scriptDir === '' ? '' : $scriptDir) . '/api/answer.php';
+$feedbackEndpoint = ($scriptDir === '' ? '' : $scriptDir) . '/api/feedback.php';
 
 // Prefer a concrete endpoint based on what exists under DOCUMENT_ROOT.
 $documentRoot = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
 if ($documentRoot !== '') {
   if (is_file($documentRoot . '/api/answer.php')) {
     $apiEndpoint = '/api/answer.php';
+    $feedbackEndpoint = '/api/feedback.php';
   } elseif (is_file($documentRoot . '/public/api/answer.php')) {
     $apiEndpoint = '/public/api/answer.php';
+    $feedbackEndpoint = '/public/api/feedback.php';
   }
 }
 ?><!doctype html>
@@ -22,6 +25,7 @@ if ($documentRoot !== '') {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PCC Vertex Answer (API Prototype)</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
   <link href="./css/bootstrap.min.css" rel="stylesheet">
   <link href="./css/bootstrap-override.css" rel="stylesheet">
   <link href="./css/legacy.css" rel="stylesheet">
@@ -84,6 +88,52 @@ if ($documentRoot !== '') {
       object-fit: cover;
       display: block;
     }
+    .feedback-actions {
+      display: flex;
+      flex-direction: column;
+      gap: .75rem;
+      margin-top: 1rem;
+      align-items: flex-start;
+    }
+    .feedback-panel {
+      width: 100%;
+    }
+    .feedback-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-start;
+      gap: .5rem;
+    }
+    .feedback-prompt {
+      font-size: .95rem;
+      font-weight: 600;
+      margin-bottom: 0;
+      text-align: left;
+    }
+    .feedback-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-start;
+      gap: .5rem;
+    }
+    .feedback-button {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      white-space: nowrap;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      text-decoration: none;
+    }
+    .feedback-button:hover,
+    .feedback-button:focus {
+      text-decoration: underline;
+      background: transparent;
+      box-shadow: none;
+    }
   </style>
 </head>
 <body class="bg-light">
@@ -143,8 +193,32 @@ if ($documentRoot !== '') {
               </div>
               <div id="answer" class="answer">
                 <div id="answerBody"></div>
-                <div id="askAnotherWrap" class="d-none mt-3">
-                  <button id="askAnotherBtn" class="btn btn-outline-primary" type="button">Ask Another Question</button>
+                <div class="feedback-actions">
+                  <div id="feedbackWrap" class="feedback-panel card bg-light border-1 p-2 d-none">
+                    <div class="feedback-header">
+                      <div id="feedbackPrompt" class="feedback-prompt">Was this answer helpful?</div>
+                      <div id="feedbackControls" class="feedback-controls gap-2">
+                      <button id="feedbackPositiveBtn" class="btn btn-link btn-sm feedback-button" type="button">
+                        <i class="fa-regular fa-thumbs-up" aria-hidden="true"></i>
+                        <span>Yes</span>
+                      </button>
+                      <button id="feedbackNegativeBtn" class="btn btn-link btn-sm feedback-button" type="button">
+                        <i class="fa-regular fa-thumbs-down" aria-hidden="true"></i>
+                        <span>No</span>
+                      </button>
+                      </div>
+                    </div>
+                    <form id="feedbackForm" class="d-none mt-2" novalidate>
+                      <div class="input-group input-group-sm">
+                        <input id="feedbackInput" class="form-control" type="text" maxlength="500" placeholder="Tell us what was missing or incorrect" />
+                        <button id="feedbackSubmitBtn" class="btn btn-outline-primary" type="submit">Submit</button>
+                      </div>
+                    </form>
+                    <div id="feedbackThanks" class="small text-dark fw-semibold d-none mt-2">Thank you for your feedback!</div>
+                  </div>
+                  <div id="askAnotherWrap" class="d-none">
+                    <button id="askAnotherBtn" class="btn btn-outline-primary btn-xs" type="button">Ask Another Question</button>
+                  </div>
                 </div>
                 <div id="answerHelp" class="mt-3"></div>
               </div>
@@ -191,8 +265,10 @@ if ($documentRoot !== '') {
 const $ = (sel) => document.querySelector(sel);
 const SESSION_KEY = "pcc_vertex_session";
 const API_ENDPOINT = <?= json_encode($apiEndpoint, JSON_UNESCAPED_SLASHES) ?>;
+const FEEDBACK_ENDPOINT = <?= json_encode($feedbackEndpoint, JSON_UNESCAPED_SLASHES) ?>;
 let referenceLookup = new Map();
 let activePopovers = [];
+let currentFeedbackContext = { question: "", answer: "" };
 
 function setAskControlsVisible(isVisible) {
   $("#askControls").classList.toggle("d-none", !isVisible);
@@ -225,6 +301,106 @@ function showError(msg) {
 function clearError() {
   $("#error").classList.add("d-none");
   $("#error").textContent = "";
+}
+
+function setFeedbackLoading(isLoading) {
+  $("#feedbackPositiveBtn").disabled = isLoading;
+  $("#feedbackNegativeBtn").disabled = isLoading;
+  $("#feedbackInput").disabled = isLoading;
+  $("#feedbackSubmitBtn").disabled = isLoading;
+}
+
+function lockFeedbackChoice(choice) {
+  if (choice === "up") {
+    $("#feedbackNegativeBtn").disabled = true;
+    return;
+  }
+  if (choice === "down") {
+    $("#feedbackPositiveBtn").disabled = true;
+  }
+}
+
+function resetFeedback() {
+  currentFeedbackContext = { question: "", answer: "" };
+  $("#feedbackWrap").classList.add("d-none");
+  $("#feedbackForm").classList.add("d-none");
+  $("#feedbackInput").value = "";
+  $("#feedbackThanks").classList.add("d-none");
+  $("#feedbackPositiveBtn").classList.remove("text-dark", "opacity-50");
+  $("#feedbackNegativeBtn").classList.remove("text-dark", "opacity-50");
+  $("#feedbackPositiveBtn").disabled = false;
+  $("#feedbackNegativeBtn").disabled = false;
+  setFeedbackLoading(false);
+}
+
+async function submitFeedback({ rating, feedback = "" }) {
+  const payload = new URLSearchParams({
+    question: currentFeedbackContext.question,
+    answer: currentFeedbackContext.answer,
+    rating,
+    feedback,
+    page_url: window.location.href,
+  });
+
+  const res = await fetch(FEEDBACK_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    body: payload,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error || `Feedback request failed (${res.status})`);
+  }
+}
+
+function showFeedbackThanks() {
+  $("#feedbackForm").classList.add("d-none");
+  $("#feedbackThanks").classList.remove("d-none");
+}
+
+async function handlePositiveFeedback() {
+  setFeedbackLoading(true);
+  try {
+    await submitFeedback({ rating: "up" });
+    $("#feedbackPositiveBtn").classList.add("text-dark");
+    $("#feedbackNegativeBtn").classList.add("opacity-50");
+    lockFeedbackChoice("up");
+    showFeedbackThanks();
+  } catch (e) {
+    showError(e?.message || "Unable to save feedback.");
+  } finally {
+    setFeedbackLoading(false);
+  }
+}
+
+function handleNegativeFeedbackStart() {
+  $("#feedbackNegativeBtn").classList.add("text-dark");
+  $("#feedbackNegativeBtn").classList.remove("opacity-50");
+  $("#feedbackPositiveBtn").classList.remove("text-dark");
+  $("#feedbackPositiveBtn").classList.add("opacity-50");
+  lockFeedbackChoice("down");
+  $("#feedbackThanks").classList.add("d-none");
+  $("#feedbackForm").classList.remove("d-none");
+  $("#feedbackInput").focus({ preventScroll: true });
+}
+
+async function handleNegativeFeedbackSubmit(e) {
+  e.preventDefault();
+  const feedback = $("#feedbackInput").value.trim();
+  if (!feedback) {
+    $("#feedbackInput").focus();
+    return;
+  }
+
+  setFeedbackLoading(true);
+  try {
+    await submitFeedback({ rating: "down", feedback });
+    showFeedbackThanks();
+  } catch (err) {
+    showError(err?.message || "Unable to save feedback.");
+  } finally {
+    setFeedbackLoading(false);
+  }
 }
 
 function renderAnswerText(text) {
@@ -467,6 +643,7 @@ async function ask(prefillQuestion = null) {
   $("#answerCitations").classList.add("d-none");
   $("#answerCitations").innerHTML = "";
   $("#answerHelp").innerHTML = "";
+  resetFeedback();
 
   const q = String(prefillQuestion || $("#q").value).trim();
   if (!q) return showError("Please enter a question.");
@@ -499,6 +676,7 @@ async function ask(prefillQuestion = null) {
 
     renderQuestionPill(q);
     renderAnswerText(data.answer);
+    currentFeedbackContext = { question: q, answer: String(data.answer || "") };
     renderCitations(data.citations || []);
     renderReferences(data.references || []);
     renderAnswerCitations(data.citations || []);
@@ -508,6 +686,7 @@ async function ask(prefillQuestion = null) {
       $("#metaLink").classList.remove("d-none");
     }
     $("#debug").textContent = JSON.stringify(data, null, 2);
+    $("#feedbackWrap").classList.remove("d-none");
 
     if (data?.meta?.session) {
       localStorage.setItem(SESSION_KEY, data.meta.session);
@@ -536,6 +715,9 @@ $("#askAnotherBtn").addEventListener("click", () => {
   setAskControlsVisible(true);
   focusQuestionInput();
 });
+$("#feedbackPositiveBtn").addEventListener("click", handlePositiveFeedback);
+$("#feedbackNegativeBtn").addEventListener("click", handleNegativeFeedbackStart);
+$("#feedbackForm").addEventListener("submit", handleNegativeFeedbackSubmit);
 </script>
 </body>
 </html>

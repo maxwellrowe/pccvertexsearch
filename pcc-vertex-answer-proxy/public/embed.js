@@ -3,7 +3,8 @@
 (() => {
   const script = document.currentScript;
   const endpoint = script?.dataset?.endpoint;
-  if (!endpoint) return;
+  const feedbackEndpoint = script?.dataset?.feedbackEndpoint;
+  if (!endpoint || !feedbackEndpoint) return;
 
   const SESSION_KEY = "pcc_vertex_embed_session";
   const ROOT_ID = "pcc-vertex-widget";
@@ -65,6 +66,58 @@
         object-fit: cover;
         display: block;
       }
+      .pccw-feedback-actions {
+        display: flex;
+        flex-direction: column;
+        gap: .75rem;
+        margin-top: 1rem;
+        align-items: flex-start;
+      }
+      .pccw-feedback-panel {
+        width: 100%;
+      }
+      .pccw-feedback-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-start;
+        gap: .5rem;
+      }
+      .pccw-feedback-prompt {
+        font-size: .95rem;
+        font-weight: 600;
+        margin-bottom: 0;
+        text-align: left;
+      }
+      .pccw-feedback-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-start;
+        gap: .5rem;
+      }
+      .pccw-feedback-button {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        white-space: nowrap;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        text-decoration: none;
+      }
+      .pccw-feedback-button:hover,
+      .pccw-feedback-button:focus {
+        text-decoration: underline;
+        background: transparent;
+        box-shadow: none;
+      }
+      .pccw-feedback-icon {
+        width: 1rem;
+        height: 1rem;
+        display: inline-block;
+        flex: 0 0 auto;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -112,8 +165,38 @@
                   </div>
                   <div id="pccw-answer">
                     <div id="pccw-answer-body"></div>
-                    <div id="pccw-ask-another-wrap" class="d-none mt-3">
-                      <button type="button" id="pccw-ask-another" class="btn btn-outline-primary">Ask Another Question</button>
+                    <div class="pccw-feedback-actions">
+                      <div id="pccw-feedback-wrap" class="pccw-feedback-panel card bg-light border-1 p-2 d-none">
+                        <div class="pccw-feedback-header">
+                          <div class="pccw-feedback-prompt">Was this answer helpful?</div>
+                          <div class="pccw-feedback-controls gap-2">
+                          <button type="button" id="pccw-feedback-positive" class="btn btn-link btn-sm pccw-feedback-button">
+                            <svg class="pccw-feedback-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M7 10v10"></path>
+                              <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.96 2.38l-1.07 6A2 2 0 0 1 18.75 20H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3l3.6-5.4A1.5 1.5 0 0 1 15 3.43v2.45Z"></path>
+                            </svg>
+                            <span>Yes</span>
+                          </button>
+                          <button type="button" id="pccw-feedback-negative" class="btn btn-link btn-sm pccw-feedback-button">
+                            <svg class="pccw-feedback-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M7 14V4"></path>
+                              <path d="M15 18.12 14 14h5.83a2 2 0 0 0 1.96-2.38l-1.07-6A2 2 0 0 0 18.75 4H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3l3.6 5.4A1.5 1.5 0 0 0 15 20.57v-2.45Z"></path>
+                            </svg>
+                            <span>No</span>
+                          </button>
+                          </div>
+                        </div>
+                        <form id="pccw-feedback-form" class="d-none mt-2" novalidate>
+                          <div class="input-group input-group-sm">
+                            <input id="pccw-feedback-input" class="form-control" type="text" maxlength="500" placeholder="Tell us what was missing or incorrect" />
+                            <button id="pccw-feedback-submit" class="btn btn-outline-primary" type="submit">Submit</button>
+                          </div>
+                        </form>
+                        <div id="pccw-feedback-thanks" class="small text-dark fw-semibold d-none mt-2">Thank you for your feedback!</div>
+                      </div>
+                      <div id="pccw-ask-another-wrap" class="d-none">
+                        <button type="button" id="pccw-ask-another" class="btn btn-outline-primary">Ask Another Question</button>
+                      </div>
                     </div>
                     <div id="pccw-answer-help" class="mt-3"></div>
                   </div>
@@ -173,6 +256,13 @@
     answer: root.querySelector("#pccw-answer"),
     answerBody: root.querySelector("#pccw-answer-body"),
     answerHelp: root.querySelector("#pccw-answer-help"),
+    feedbackWrap: root.querySelector("#pccw-feedback-wrap"),
+    feedbackPositive: root.querySelector("#pccw-feedback-positive"),
+    feedbackNegative: root.querySelector("#pccw-feedback-negative"),
+    feedbackForm: root.querySelector("#pccw-feedback-form"),
+    feedbackInput: root.querySelector("#pccw-feedback-input"),
+    feedbackSubmit: root.querySelector("#pccw-feedback-submit"),
+    feedbackThanks: root.querySelector("#pccw-feedback-thanks"),
     anchors: root.querySelector("#pccw-anchors"),
     citesWrap: root.querySelector("#pccw-cites-wrap"),
     cites: root.querySelector("#pccw-cites"),
@@ -186,6 +276,7 @@
   let widgetModal = null;
   let referenceLookup = new Map();
   let markdownLoadPromise = null;
+  let currentFeedbackContext = { question: "", answer: "" };
 
   function setAskControlsVisible(isVisible) {
     el.askControls.classList.toggle("d-none", !isVisible);
@@ -199,31 +290,6 @@
   function focusQuestionInput() {
     el.q.focus({ preventScroll: true });
     el.q.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
-
-  function loadBootstrapBundle() {
-    return new Promise((resolve, reject) => {
-      if (window.bootstrap?.Modal) {
-        resolve();
-        return;
-      }
-
-      const existing = document.querySelector('script[data-pcc-bootstrap-loader="1"]');
-      if (existing) {
-        existing.addEventListener("load", () => resolve(), { once: true });
-        existing.addEventListener("error", () => reject(new Error("Failed to load Bootstrap JS.")), { once: true });
-        return;
-      }
-
-      const src = script?.dataset?.bootstrapJs || "https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js";
-      const tag = document.createElement("script");
-      tag.src = src;
-      tag.async = true;
-      tag.dataset.pccBootstrapLoader = "1";
-      tag.onload = () => resolve();
-      tag.onerror = () => reject(new Error(`Failed to load Bootstrap JS from ${src}`));
-      document.head.appendChild(tag);
-    });
   }
 
   function loadScriptOnce(dataAttr, src) {
@@ -260,15 +326,12 @@
     await markdownLoadPromise;
   }
 
-  async function ensureModalReady() {
+  function ensureModalReady() {
     if (widgetModal) {
       return widgetModal;
     }
     if (!window.bootstrap?.Modal) {
-      await loadBootstrapBundle();
-    }
-    if (!window.bootstrap?.Modal) {
-      throw new Error("Bootstrap Modal JS is required for embed.js");
+      throw new Error("Bootstrap Modal JS is required on the host page for embed.js.");
     }
     widgetModal = window.bootstrap.Modal.getOrCreateInstance(el.modal);
     return widgetModal;
@@ -300,6 +363,23 @@
     el.status.innerHTML = on ? loadingHtml : "";
   }
 
+  function setFeedbackLoading(on) {
+    el.feedbackPositive.disabled = on;
+    el.feedbackNegative.disabled = on;
+    el.feedbackInput.disabled = on;
+    el.feedbackSubmit.disabled = on;
+  }
+
+  function lockFeedbackChoice(choice) {
+    if (choice === "up") {
+      el.feedbackNegative.disabled = true;
+      return;
+    }
+    if (choice === "down") {
+      el.feedbackPositive.disabled = true;
+    }
+  }
+
   function resetForAsk() {
     setError("");
     el.result.classList.add("d-none");
@@ -308,6 +388,16 @@
     el.metaLink.classList.add("d-none");
     el.answerBody.textContent = "";
     el.answerHelp.innerHTML = "";
+    el.feedbackWrap.classList.add("d-none");
+    el.feedbackForm.classList.add("d-none");
+    el.feedbackInput.value = "";
+    el.feedbackThanks.classList.add("d-none");
+    el.feedbackPositive.classList.remove("text-dark", "opacity-50");
+    el.feedbackNegative.classList.remove("text-dark", "opacity-50");
+    el.feedbackPositive.disabled = false;
+    el.feedbackNegative.disabled = false;
+    setFeedbackLoading(false);
+    currentFeedbackContext = { question: "", answer: "" };
 
     el.anchors.innerHTML = "";
     el.anchors.classList.add("d-none");
@@ -366,6 +456,75 @@
     el.questionPill.appendChild(label);
     el.questionPill.appendChild(document.createTextNode(` ${q}`));
     el.questionPill.classList.remove("d-none");
+  }
+
+  async function submitFeedback({ rating, feedback = "" }) {
+    const res = await fetch(feedbackEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: new URLSearchParams({
+        question: currentFeedbackContext.question,
+        answer: currentFeedbackContext.answer,
+        rating,
+        feedback,
+        page_url: window.location.href,
+      }),
+      credentials: "omit"
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data?.error || `Feedback request failed (${res.status})`);
+    }
+  }
+
+  function showFeedbackThanks() {
+    el.feedbackForm.classList.add("d-none");
+    el.feedbackThanks.classList.remove("d-none");
+  }
+
+  async function handlePositiveFeedback() {
+    setFeedbackLoading(true);
+    try {
+      await submitFeedback({ rating: "up" });
+      el.feedbackPositive.classList.add("text-dark");
+      el.feedbackNegative.classList.add("opacity-50");
+      lockFeedbackChoice("up");
+      showFeedbackThanks();
+    } catch (e) {
+      setError(e?.message || "Unable to save feedback.");
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }
+
+  function handleNegativeFeedbackStart() {
+    el.feedbackNegative.classList.add("text-dark");
+    el.feedbackNegative.classList.remove("opacity-50");
+    el.feedbackPositive.classList.remove("text-dark");
+    el.feedbackPositive.classList.add("opacity-50");
+    lockFeedbackChoice("down");
+    el.feedbackThanks.classList.add("d-none");
+    el.feedbackForm.classList.remove("d-none");
+    el.feedbackInput.focus({ preventScroll: true });
+  }
+
+  async function handleNegativeFeedbackSubmit(event) {
+    event.preventDefault();
+    const feedback = String(el.feedbackInput.value || "").trim();
+    if (!feedback) {
+      el.feedbackInput.focus();
+      return;
+    }
+
+    setFeedbackLoading(true);
+    try {
+      await submitFeedback({ rating: "down", feedback });
+      showFeedbackThanks();
+    } catch (e) {
+      setError(e?.message || "Unable to save feedback.");
+    } finally {
+      setFeedbackLoading(false);
+    }
   }
 
   function renderCitations(citations) {
@@ -511,18 +670,13 @@
     }
 
     try {
-      await ensureModalReady();
-    } catch (e) {
-      setError(e?.message || "Unable to initialize modal.");
-      return;
-    }
-    await ensureMarkdownReady();
-    widgetModal.show();
-    setAskControlsVisible(true);
-    resetForAsk();
-    setLoading(true);
+      const modal = ensureModalReady();
+      await ensureMarkdownReady();
+      modal.show();
+      setAskControlsVisible(true);
+      resetForAsk();
+      setLoading(true);
 
-    try {
       const send = async (sid) => {
         const res = await fetch(endpoint, {
           method: "POST",
@@ -548,11 +702,13 @@
 
       renderQuestionPill(text);
       renderAnswer(data.answer);
+      currentFeedbackContext = { question: text, answer: String(data.answer || "") };
       renderCitations(data.citations || []);
       renderReferences(data.references || []);
       renderAnswerAnchors(data.citations || []);
       renderSearch(data.search_results || []);
       renderFollowUps(data.related_questions || []);
+      el.feedbackWrap.classList.remove("d-none");
 
       if (data?.meta?.session) {
         localStorage.setItem(SESSION_KEY, data.meta.session);
@@ -573,22 +729,11 @@
   }
 
   el.ask.addEventListener("click", () => ask());
-  el.launch.addEventListener("click", async (e) => {
-    if (window.bootstrap?.Modal) {
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      await ensureModalReady();
-      widgetModal.show();
-    } catch (err) {
-      console.error(err);
-      setError("Bootstrap modal JavaScript could not be loaded.");
-    }
-  });
   el.q.addEventListener("keydown", (e) => {
     if (e.key === "Enter") ask();
+  });
+  el.modal.addEventListener("shown.bs.modal", () => {
+    focusQuestionInput();
   });
   el.newChat.addEventListener("click", () => {
     localStorage.removeItem(SESSION_KEY);
@@ -600,8 +745,9 @@
     setAskControlsVisible(true);
     focusQuestionInput();
   });
+  el.feedbackPositive.addEventListener("click", handlePositiveFeedback);
+  el.feedbackNegative.addEventListener("click", handleNegativeFeedbackStart);
+  el.feedbackForm.addEventListener("submit", handleNegativeFeedbackSubmit);
 
-  // Preload modal support in background when possible.
-  ensureModalReady().catch(() => {});
   ensureMarkdownReady().catch(() => {});
 })();

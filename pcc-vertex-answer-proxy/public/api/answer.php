@@ -144,17 +144,80 @@ function is_linkable_url(string $url): bool {
   return preg_match('~^https?://~i', $url) === 1;
 }
 
-function linkify_plain_urls(string $text): string {
+function allowed_answer_urls(array $citations, array $references, array $searchResults): array {
+  $allowed = [];
+
+  foreach (array_merge($citations, $references, $searchResults) as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+
+    $uri = trim((string) ($item['uri'] ?? ''));
+    if ($uri === '' || !is_linkable_url($uri)) {
+      continue;
+    }
+
+    $allowed[$uri] = true;
+  }
+
+  return $allowed;
+}
+
+function sanitize_plain_urls(string $text, array $allowedUrls): string {
   $pattern = '~(?<!["\'=])(https?://[^\s<]+[^\s<\)\]\}\.,;:!?])~i';
 
-  return (string) preg_replace_callback($pattern, function (array $matches): string {
+  return (string) preg_replace_callback($pattern, static function (array $matches) use ($allowedUrls): string {
     $url = trim((string) ($matches[1] ?? ''));
-    if ($url === '' || !is_linkable_url($url)) {
+    if ($url === '' || isset($allowedUrls[$url])) {
+      return (string) ($matches[0] ?? '');
+    }
+
+    return '';
+  }, $text);
+}
+
+function linkify_plain_urls(string $text, array $allowedUrls): string {
+  $pattern = '~(?<!["\'=])(https?://[^\s<]+[^\s<\)\]\}\.,;:!?])~i';
+
+  return (string) preg_replace_callback($pattern, static function (array $matches) use ($allowedUrls): string {
+    $url = trim((string) ($matches[1] ?? ''));
+    if ($url === '' || !is_linkable_url($url) || !isset($allowedUrls[$url])) {
       return (string) ($matches[0] ?? '');
     }
 
     return '<a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" target="_blank" rel="noopener noreferrer">' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '</a>';
   }, $text);
+}
+
+function title_link_labels(string $title): array {
+  $labels = [];
+  $variants = [$title];
+
+  $suffixPatterns = [
+    '/\s*[-|:]\s*Pasadena City College\s*$/iu',
+    '/\s*[-|:]\s*PCC\s*$/iu',
+  ];
+
+  foreach ($suffixPatterns as $pattern) {
+    $trimmed = preg_replace($pattern, '', $title);
+    if (is_string($trimmed) && $trimmed !== '') {
+      $variants[] = trim($trimmed);
+    }
+  }
+
+  foreach ($variants as $variant) {
+    $label = trim((string) $variant);
+    if ($label === '' || mb_strlen($label) < 4) {
+      continue;
+    }
+    $labels[mb_strtolower($label)] = $label;
+  }
+
+  uasort($labels, static function (string $a, string $b): int {
+    return mb_strlen($b) <=> mb_strlen($a);
+  });
+
+  return array_values($labels);
 }
 
 function cta_link_targets(array $citations, array $references, array $searchResults): array {
@@ -176,13 +239,18 @@ function cta_link_targets(array $citations, array $references, array $searchResu
       continue;
     }
 
-    $key = mb_strtolower($title);
+    $labels = title_link_labels($title);
+    if (!$labels) {
+      continue;
+    }
+
+    $key = mb_strtolower((string) $labels[0]);
     if (isset($seen[$key])) {
       continue;
     }
 
     $seen[$key] = true;
-    $targets[] = ['title' => $title, 'uri' => $uri];
+    $targets[] = ['title' => $title, 'uri' => $uri, 'labels' => $labels];
   }
 
   usort($targets, static function (array $a, array $b): int {
@@ -196,34 +264,70 @@ function linkify_cta_titles(string $text, array $targets): string {
   $verbs = '(?:visit|check|review|see|open|go to|contact|explore|use|complete|submit|apply through|learn more about)';
 
   foreach ($targets as $target) {
-    $title = (string) ($target['title'] ?? '');
     $uri = (string) ($target['uri'] ?? '');
-    if ($title === '' || $uri === '') {
+    $labels = is_array($target['labels'] ?? null) ? $target['labels'] : [];
+    if ($uri === '' || !$labels) {
       continue;
     }
 
-    $pattern = '/\b(' . $verbs . ')\s+(the\s+)?(' . preg_quote($title, '/') . ')\b/iu';
-    $replacementCount = 0;
-    $text = (string) preg_replace_callback(
-      $pattern,
-      static function (array $matches) use ($uri): string {
-        $verb = (string) ($matches[1] ?? '');
-        $article = (string) ($matches[2] ?? '');
-        $label = (string) ($matches[3] ?? '');
-        $safeUri = htmlspecialchars($uri, ENT_QUOTES, 'UTF-8');
-        $safeLabel = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
-        return $verb . ' ' . $article . '<a href="' . $safeUri . '" target="_blank" rel="noopener noreferrer">' . $safeLabel . '</a>';
-      },
-      $text,
-      1,
-      $replacementCount
-    );
+    foreach ($labels as $label) {
+      $pattern = '/\b(' . $verbs . ')\s+(the\s+)?(' . preg_quote($label, '/') . ')\b/iu';
+      $replacementCount = 0;
+      $text = (string) preg_replace_callback(
+        $pattern,
+        static function (array $matches) use ($uri): string {
+          $verb = (string) ($matches[1] ?? '');
+          $article = (string) ($matches[2] ?? '');
+          $labelText = (string) ($matches[3] ?? '');
+          $safeUri = htmlspecialchars($uri, ENT_QUOTES, 'UTF-8');
+          $safeLabel = htmlspecialchars($labelText, ENT_QUOTES, 'UTF-8');
+          return $verb . ' ' . $article . '<a href="' . $safeUri . '" target="_blank" rel="noopener noreferrer">' . $safeLabel . '</a>';
+        },
+        $text,
+        1,
+        $replacementCount
+      );
+
+      if ($replacementCount > 0) {
+        break;
+      }
+    }
+  }
+
+  foreach ($targets as $target) {
+    $uri = (string) ($target['uri'] ?? '');
+    $labels = is_array($target['labels'] ?? null) ? $target['labels'] : [];
+    if ($uri === '' || !$labels) {
+      continue;
+    }
+
+    foreach ($labels as $label) {
+      $pattern = '/\b(' . preg_quote($label, '/') . ')\b/iu';
+      $replacementCount = 0;
+      $text = (string) preg_replace_callback(
+        $pattern,
+        static function (array $matches) use ($uri): string {
+          $labelText = (string) ($matches[1] ?? '');
+          $safeUri = htmlspecialchars($uri, ENT_QUOTES, 'UTF-8');
+          $safeLabel = htmlspecialchars($labelText, ENT_QUOTES, 'UTF-8');
+          return '<a href="' . $safeUri . '" target="_blank" rel="noopener noreferrer">' . $safeLabel . '</a>';
+        },
+        $text,
+        1,
+        $replacementCount
+      );
+
+      if ($replacementCount > 0) {
+        break;
+      }
+    }
   }
 
   return $text;
 }
 
 function linkify_answer_text(string $answerText, array $citations, array $references, array $searchResults): string {
+  $allowedUrls = allowed_answer_urls($citations, $references, $searchResults);
   $targets = cta_link_targets($citations, $references, $searchResults);
   $parts = preg_split('/(<[^>]+>)/', $answerText, -1, PREG_SPLIT_DELIM_CAPTURE);
   if (!is_array($parts)) {
@@ -234,7 +338,8 @@ function linkify_answer_text(string $answerText, array $citations, array $refere
     if ($part === '' || $part[0] === '<') {
       continue;
     }
-    $part = linkify_plain_urls($part);
+    $part = sanitize_plain_urls($part, $allowedUrls);
+    $part = linkify_plain_urls($part, $allowedUrls);
     if ($targets) {
       $part = linkify_cta_titles($part, $targets);
     }
@@ -851,6 +956,7 @@ if (empty($_COOKIE['vid'])) {
 // -----------------------------
 $cacheEnabled = ($config['cache']['enabled'] ?? true) === true;
 $cacheTtl = (int) ($config['cache']['ttl_seconds'] ?? 300);
+$promptVersion = '2026-04-13-grounded-urls-only';
 
 $cacheKeyMaterial = json_encode([
   'q' => $q,
@@ -858,6 +964,7 @@ $cacheKeyMaterial = json_encode([
   'project_id' => $config['project_id'],
   'location' => $config['location'],
   'engine_id' => $config['engine_id'],
+  'prompt_version' => $promptVersion,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
 $cacheKey = hash('sha256', $cacheKeyMaterial ?: $q);
@@ -1027,9 +1134,11 @@ Boundaries:
 
 Links and call-to-action behavior:
 
-- When directing the user to take an action (for example: apply, register, log in, contact an office, schedule an appointment), include a relevant URL when available.
+- When directing the user to take an action (for example: apply, register, log in, contact an office, schedule an appointment), prefer naming the exact PCC page, office, or resource rather than writing out a URL in the prose.
+- Only include a URL when it is explicitly available in the grounded source metadata for that exact resource.
+- Never guess, rewrite, shorten, or construct a Pasadena City College URL from page titles, breadcrumbs, or patterns.
+- If the exact grounded URL is not available, do not invent one. Mention the resource by name and give the action the user should take there.
 - Always pair links with a clear instruction describing what the user should do on that page.
-- Use full URLs (https://...) so they are clickable in most interfaces.
 - Limit to 1–2 links per response and only include links that directly support the next step.
 - Do not include links without context or explanation.
 TXT;

@@ -46,7 +46,7 @@ return [
 
   // Protected scheduler-triggered recrawl jobs
   'scheduler' => [
-    'secret' => env('PCC_SCHEDULER_SECRET', ''),
+    'secret' => env('PCC_SCHEDULER_SECRET', '9f4c2b8e1d7a6c3f5e8b2a1d4c6f7b9a2e5d8c1f4a7b6c3d9e2f5a8b1c4d7e6'),
     'header_name' => env('PCC_SCHEDULER_SECRET_HEADER', 'X-Scheduler-Secret'),
   ],
 
@@ -72,7 +72,7 @@ return [
     'enabled' => env('PCC_GSHEETS_LOG_ENABLED', '1') === '1',
     'webhook_url' => env(
       'PCC_GSHEETS_WEBHOOK_URL',
-      'https://script.google.com/macros/s/AKfycbzaGtQ52dmtmUOCaFihUHj539L4zb5qh419Pjjc4A5jeA0sFk25xw1BowkkSDvX2WvxbA/exec'
+      'https://script.google.com/macros/s/AKfycbw4YfZzyO_g6ZeibQVtfI5v4qU6dnHrHjTe_noYJ5oPk-hAvYnOl-VIXA_3RreN0wZucA/exec'
     ),
     'webhook_token' => env(
       'PCC_GSHEETS_WEBHOOK_TOKEN',
