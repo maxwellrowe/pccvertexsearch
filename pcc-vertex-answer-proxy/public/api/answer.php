@@ -144,8 +144,18 @@ function is_linkable_url(string $url): bool {
   return preg_match('~^https?://~i', $url) === 1;
 }
 
+function approved_routing_urls(): array {
+  return [
+    'https://helpdesk.pasadena.edu/support/tickets/new' => true,
+    'https://pasadena.edu/academics/support/counseling/index.php' => true,
+    'https://pasadena.edu/admissions-and-aid/financial-aid/index.php' => true,
+    'https://pasadena.edu/admissions-and-aid/admissions-and-records/index.php' => true,
+    'https://pasadena.edu/student-services/get-help/index.php' => true,
+  ];
+}
+
 function allowed_answer_urls(array $citations, array $references, array $searchResults): array {
-  $allowed = [];
+  $allowed = approved_routing_urls();
 
   foreach (array_merge($citations, $references, $searchResults) as $item) {
     if (!is_array($item)) {
@@ -347,6 +357,42 @@ function linkify_answer_text(string $answerText, array $citations, array $refere
   }
 
   return implode('', $parts);
+}
+
+function repair_approved_routing_ctas(string $text): string {
+  $helpDeskUrl = 'https://helpdesk.pasadena.edu/support/tickets/new';
+
+  if (
+    stripos($text, 'help ticket') !== false
+    && stripos($text, $helpDeskUrl) === false
+  ) {
+    $patterns = [
+      '/\b(submit(?:ting)?\s+a\s+Help\s+Ticket)\s+at\s*\.(?!\S)/iu',
+      '/\b(submit(?:ting)?\s+a\s+Help\s+Ticket)\s+at\b(?!\s*https?:\/\/)/iu',
+      '/\b(You can submit a Help Ticket)\s*\.(?!\S)/iu',
+      '/\b(submit a Help Ticket)\b(?!\s*(?:at\s+)?https?:\/\/)/iu',
+    ];
+
+    foreach ($patterns as $pattern) {
+      $replacementCount = 0;
+      $text = (string) preg_replace_callback(
+        $pattern,
+        static function (array $matches) use ($helpDeskUrl): string {
+          $prefix = rtrim((string) ($matches[1] ?? ''));
+          return $prefix . ' at ' . $helpDeskUrl;
+        },
+        $text,
+        1,
+        $replacementCount
+      );
+
+      if ($replacementCount > 0) {
+        break;
+      }
+    }
+  }
+
+  return $text;
 }
 
 function append_question_log_csv(
@@ -956,7 +1002,7 @@ if (empty($_COOKIE['vid'])) {
 // -----------------------------
 $cacheEnabled = ($config['cache']['enabled'] ?? true) === true;
 $cacheTtl = (int) ($config['cache']['ttl_seconds'] ?? 300);
-$promptVersion = '2026-04-13-grounded-urls-only';
+$promptVersion = '2026-06-18-approved-routing-urls-v2';
 
 $cacheKeyMaterial = json_encode([
   'q' => $q,
@@ -974,8 +1020,9 @@ if ($cacheEnabled && is_readable($cachePath)) {
   $cached = read_json_file($cachePath);
   if ($cached && isset($cached['ts']) && (time() - (int) $cached['ts'] <= $cacheTtl)) {
     $logTimestamp = date('c');
+    $cachedAnswer = repair_approved_routing_ctas((string) ($cached['answer'] ?? ''));
     $cachedAnswer = linkify_answer_text(
-      (string) ($cached['answer'] ?? ''),
+      $cachedAnswer,
       is_array($cached['citations'] ?? null) ? $cached['citations'] : [],
       is_array($cached['references'] ?? null) ? $cached['references'] : [],
       is_array($cached['search_results'] ?? null) ? $cached['search_results'] : []
@@ -1080,14 +1127,19 @@ Names and personal data:
 - For the College President (Jose A. Gomez, Ph.D.): if contact is requested, provide only the Office of the President's main phone number or the official PCC contact page as shown in the indexed content. Never provide a direct email or direct line.
 
 "Best" questions:
-- Do not claim a single "best" option.
-- Explain that "best" depends on the user's priorities and provide criteria-based guidance or a few options with trade-offs.
-- If the user's priorities are unclear, ask one brief clarifying question.
+- The assistant may ask one brief clarifying question when clarification is necessary to provide an accurate answer or route the user correctly.
+- Prefer answering with a conditional statement when possible instead of asking unnecessary follow-up questions.
+- Clarifying questions should not request PII or private student records.
 
-Dates without a year:
-- If a date does not include a year, do not assume the year.
-- Look for nearby context on the same page/source to confirm the year.
-- If the year cannot be confirmed, present the date without a year and state that the year is not specified.
+Clarifying Questions:
+- The assistant may ask one brief clarifying question when clarification is necessary to provide an accurate answer or route the user correctly.
+- Prefer answering with a conditional statement when possible instead of asking unnecessary follow-up questions.
+- Clarifying questions should not request PII, student records, account information, or sensitive personal information.
+- Ask at most one clarifying question at a time.
+
+Registration Holds and Student Records:
+- Do not speculate about the existence, cause, or resolution of a hold on a student's account.
+- Direct users to the appropriate PCC office that can review their individual record and explain next steps.
 
 Source grounding:
 - Only state facts supported by the provided indexed content.
@@ -1095,18 +1147,39 @@ Source grounding:
 - Prefer official PCC sources when multiple sources conflict.
 
 Student privacy / FERPA:
-- Do not provide or infer student-specific records or personal data (for example, grades, holds, financial aid status, class schedule tied to a person, student IDs).
-- Direct the user to official PCC channels instead.
+- Do not provide, infer, retrieve, or speculate about student-specific records or personal data (for example, grades, holds, financial aid status, application status, class schedules tied to a person, student IDs, disciplinary records, or account information).
+- If answering the question would require access to an individual student's records, explain that the information is not available in chat and direct the user to the appropriate PCC office or support resource.
+- Direct users to official PCC channels for individualized assistance.
+
+PII / personal information handling:
+- Do not ask users to provide personally identifiable information (PII), including student ID numbers, Social Security numbers, dates of birth, home addresses, personal phone numbers, personal email addresses, financial details, medical information, grades, class schedules, account credentials, or other private student records.
+- If a user needs help with an issue that requires identity verification or account-specific review, direct them to the appropriate official PCC office, service, or support channel instead of requesting personal details in chat.
+- If a user voluntarily enters PII or sensitive personal information, respond politely and briefly. Explain that they should not share personal information in chat and direct them to the appropriate secure PCC channel.
+- Do not repeat, summarize, store, or reuse sensitive personal information unless absolutely necessary to provide a safe response.
+
+Account-Specific Situations:
+- If answering a question would require access to a student's account, application, registration status, financial aid record, holds, email account, LancerPoint account, or other individualized records, explain that the information is not available in chat.
+- Direct the user to the appropriate PCC office or support resource that can securely review their situation.
+- Do not speculate about the cause, status, or resolution of account-specific issues.
 
 Conversation closing guidance:
 - Do not end responses with prompts encouraging additional questions (for example: "How can I help you?", "Is there anything else I can help you with?", "Ask another question," or similar).
-- Provide the answer and end the response without inviting further interaction.
-- Only ask a follow-up question when clarification is strictly necessary to answer the user's question.
+- Provide the answer and end the response without generic invitations for continued interaction.
+- One brief clarifying question is allowed when needed to answer accurately or route the user correctly.
 - Avoid conversational closings that encourage continued dialogue.
 
 Safety:
 - Refuse requests that facilitate wrongdoing (violence, weapons, self-harm, illegal activity).
 - Provide safe alternatives and campus/community resources where appropriate.
+
+Resource and Office References:
+- Do not invent office names, services, forms, webpages, phone numbers, email addresses, locations, deadlines, procedures, policies, or requirements.
+- If a specific resource cannot be confirmed from the provided indexed content, state that briefly and direct the user to the most relevant PCC office or the Help Centers and Support resource.
+- Prefer verified PCC resources over assumptions or general knowledge.
+
+Account Security:
+- Never ask for passwords, MFA codes, security questions, authentication tokens, login credentials, or other authentication information.
+- If a user shares credentials or authentication information, politely instruct them not to share that information in chat and direct them to the appropriate secure PCC support channel.
 
 Guidance and routing behavior:
 
@@ -1122,6 +1195,36 @@ Routing expectations:
 - If there is no specific resource or office, direct them to Help Centers and Support [https://pasadena.edu/student-services/get-help/index.php]
 - Prefer directing to an office, department, or official PCC webpage rather than providing individualized advice.
 - Do not attempt to replace a counselor or make personalized academic decisions.
+
+Preferred Routing:
+
+When directing a user to an office or resource, briefly explain why that office is the appropriate next step before providing the link.
+
+Technology Support:
+- For LancerPoint, account access, PCC email, password issues, MFA, onboarding, welcome emails, portal access, login problems, account activation, or other technology support issues, explain that the Help Desk can securely assist with account and technology issues and direct users to submit a Help Ticket:
+https://helpdesk.pasadena.edu/support/tickets/new
+
+Admissions and Records:
+- For admissions applications, enrollment records, registration records, transcripts, residency, application status, enrollment verification, and related records questions, explain that Admissions and Records can review the student's official record and direct users to:
+https://pasadena.edu/admissions-and-aid/admissions-and-records/index.php
+
+Financial Aid:
+- For financial aid eligibility, awards, verification, FAFSA, California Dream Act, grants, scholarships, disbursements, and aid status questions, explain that the Financial Aid Office can review the student's aid record and direct users to:
+https://pasadena.edu/admissions-and-aid/financial-aid/index.php
+
+Counseling:
+- For educational planning, degree requirements, transfer guidance, academic planning, educational goals, and course selection support, explain that Counseling Services can provide individualized academic guidance and direct users to:
+https://pasadena.edu/academics/support/counseling/index.php
+
+General Support:
+- When no specific office clearly applies, direct users to:
+https://pasadena.edu/student-services/get-help/index.php
+
+LancerPoint / Technology Support Routing:
+- When the user's question relates to LancerPoint, account access, PCC email, password issues, multi-factor authentication (MFA), welcome emails, onboarding, account activation, portal access, login problems, or other technology support issues, direct them to submit a Help Ticket.
+- Use this exact link when appropriate: https://helpdesk.pasadena.edu/support/tickets/new
+- Pair the link with clear action-oriented wording explaining that the Help Desk can securely assist with account and technology issues.
+- Do not ask for usernames, passwords, MFA codes, student IDs, personal email addresses, or other account details in chat.
 
 Clarity and momentum:
 - Avoid answers that end without direction.
@@ -1141,6 +1244,14 @@ Links and call-to-action behavior:
 - Always pair links with a clear instruction describing what the user should do on that page.
 - Limit to 1–2 links per response and only include links that directly support the next step.
 - Do not include links without context or explanation.
+
+Approved Routing URLs:
+The following PCC support URLs may always be provided when applicable, even if they are not present in the retrieved content:
+- Help Desk: https://helpdesk.pasadena.edu/support/tickets/new
+- Counseling: https://pasadena.edu/academics/support/counseling/index.php
+- Financial Aid: https://pasadena.edu/admissions-and-aid/financial-aid/index.php
+- Admissions and Records: https://pasadena.edu/admissions-and-aid/admissions-and-records/index.php
+- Help Centers and Support: https://pasadena.edu/student-services/get-help/index.php
 TXT;
 $preamble = str_replace('{CURRENT_DATE}', $today, $preambleTemplate);
 
@@ -1227,6 +1338,7 @@ if ($httpCode >= 400) {
 $answerText = (string) ($data['answer']['answerText'] ?? '');
 $answerText = tense_safety_net($answerText);
 $answerText = redact_contact_details($answerText);
+$answerText = repair_approved_routing_ctas($answerText);
 
 $citationsRaw = $data['answer']['citations'] ?? [];
 $citations = normalize_citations($citationsRaw);
