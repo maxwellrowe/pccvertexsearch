@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/tracking.php';
 
 function json_out(array $data, int $code = 200): void {
   http_response_code($code);
@@ -96,6 +97,8 @@ function post_google_sheets_log(array $sheetConfig, array $payload): void {
   curl_setopt_array($ch, [
     CURLOPT_POST => true,
     CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_MAXREDIRS => 3,
     CURLOPT_HTTPHEADER => $headers,
     CURLOPT_POSTFIELDS => $json,
     CURLOPT_CONNECTTIMEOUT => min(2, $timeout),
@@ -107,43 +110,10 @@ function post_google_sheets_log(array $sheetConfig, array $payload): void {
   $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
   curl_close($ch);
 
-  if ($errNo || $status >= 400) {
-    error_log('Google Sheets feedback webhook failed. HTTP ' . $status . ' curl_errno=' . $errNo . ' err=' . $err . ' body=' . (string) $response);
+  $result = is_string($response) ? json_decode($response, true) : null;
+  if ($errNo || $status >= 400 || ($result['ok'] ?? false) !== true) {
+    error_log('Google Sheets analytics delivery failed. HTTP ' . $status . ' curl_errno=' . $errNo);
   }
-}
-
-function append_feedback_log_csv(
-  string $path,
-  string $timestamp,
-  string $question,
-  string $answer,
-  string $rating,
-  string $feedback,
-  string $pageUrl,
-  string $ipAddress
-): void {
-  ensure_dir(dirname($path));
-
-  $fh = fopen($path, 'ab');
-  if ($fh === false) {
-    error_log('Feedback CSV log write failed (fopen): ' . $path);
-    return;
-  }
-
-  if (!flock($fh, LOCK_EX)) {
-    error_log('Feedback CSV log write failed (flock): ' . $path);
-    fclose($fh);
-    return;
-  }
-
-  if (ftell($fh) === 0) {
-    fputcsv($fh, ['timestamp', 'question', 'answer', 'rating', 'feedback', 'page_url', 'ip_address']);
-  }
-
-  fputcsv($fh, [$timestamp, $question, $answer, $rating, $feedback, $pageUrl, $ipAddress]);
-  fflush($fh);
-  flock($fh, LOCK_UN);
-  fclose($fh);
 }
 
 $config = require __DIR__ . '/../../config/config.php';
@@ -176,53 +146,30 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
   json_out(['error' => 'Method not allowed. Use POST.'], 405);
 }
 
-$question = trim((string) ($_POST['question'] ?? ''));
-$answer = trim((string) ($_POST['answer'] ?? ''));
-$rating = trim((string) ($_POST['rating'] ?? ''));
-$feedback = trim((string) ($_POST['feedback'] ?? ''));
-$pageUrl = request_page_url();
-$ip = client_ip();
-
-if ($question === '' || $answer === '') {
-  json_out(['error' => 'Missing required parameters: question and answer.'], 400);
+$type = (string) ($_POST['event_type'] ?? 'feedback');
+if (!in_array($type, ['feedback', 'feedback_comment', 'escalation'], true)) {
+  json_out(['error' => 'Invalid event type.'], 400);
 }
-if (!in_array($rating, ['up', 'down'], true)) {
-  json_out(['error' => 'Invalid rating value.'], 400);
+foreach (['session_id', 'conversation_id', 'query_id', 'answer_id', 'event_id'] as $key) {
+  if (tracking_id($key, false) === '') json_out(['error' => 'Missing or invalid ' . $key], 400);
 }
-if ($rating === 'down' && $feedback === '') {
-  json_out(['error' => 'Feedback is required for a thumbs down rating.'], 400);
+$rating = (string) ($_POST['rating'] ?? '');
+if ($type === 'feedback' && !in_array($rating, ['up', 'down'], true)) {
+  json_out(['error' => 'Invalid rating.'], 400);
 }
-if ($rating === 'up') {
-  json_out(['ok' => true], 200);
+if ($type === 'feedback_comment' && tracking_id('parent_event_id', false) === '') {
+  json_out(['error' => 'Missing feedback event ID.'], 400);
 }
-
-$question = mb_substr($question, 0, 500);
-$answer = mb_substr($answer, 0, 10000);
-$feedback = mb_substr($feedback, 0, 500);
-$timestamp = date('c');
-
-append_feedback_log_csv(
-  $logDir . '/feedback_log.csv',
-  $timestamp,
-  $question,
-  $answer,
-  $rating,
-  $feedback,
-  $pageUrl,
-  $ip
-);
-
-post_google_sheets_log(($config['google_sheets_log'] ?? []), [
-  'event_type' => 'feedback',
-  'sheet' => 'feedback',
-  'timestamp' => $timestamp,
-  'question' => $question,
-  'answer' => $answer,
-  'rating' => $rating,
-  'feedback' => $feedback,
-  'page_url' => $pageUrl,
-  'ip' => $ip,
-  'ip_address' => $ip,
-]);
-
-json_out(['ok' => true], 200);
+$row = tracking_context() + [
+  'event_type' => $type,
+  'event_id' => tracking_id('event_id'),
+  'answer_id' => tracking_id('answer_id'),
+  'timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
+  'parent_event_id' => $type === 'feedback_comment' ? tracking_id('parent_event_id', false) : '',
+  'rating' => $type === 'feedback' ? $rating : '',
+  'feedback' => $type === 'feedback_comment' ? mb_substr(trim((string) ($_POST['feedback'] ?? '')), 0, 500) : '',
+  'escalation_action' => $type === 'escalation' ? 'help_centers_support_click' : '',
+  'destination_url' => $type === 'escalation' ? 'https://pasadena.edu/student-services/get-help/index.php' : '',
+];
+if (!tracking_write($row, 'interaction_events')) json_out(['error' => 'Unable to save event. Please retry.'], 503);
+json_out(['ok' => true]);

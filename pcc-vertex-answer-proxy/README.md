@@ -186,7 +186,7 @@ include $_SERVER['DOCUMENT_ROOT'] . '/_resources/vertex/public/widget.php';
 
 1. Open a page with the include and click `Ask a Question`.
 2. Confirm the modal opens and submits.
-3. Confirm `storage/logs/requests.log` is being written.
+3. Confirm `storage/logs/question_answer_log_v2.jsonl` is being written.
 4. If calls fail, verify:
    - service account file path in `config/config.php`
    - writable permissions on `storage/`
@@ -229,9 +229,11 @@ Ensure the web server/PHP process can write to:
 1. Open a page with the include.
 2. Click `Ask a Question`.
 3. Submit a query and verify response appears.
-4. Confirm `storage/logs/requests.log` is created and receiving entries.
+4. Confirm `storage/logs/question_answer_log_v2.jsonl` is created and receiving entries.
 
 ## Current implementation notes
+
+- Analytics setup, field definitions, deployment steps, and tests: [Tracking update](docs/tracking-setup.md). New analytics use `question_answer_log_v2` and `interaction_events`, with IP-free local JSONL backups.
 
 - `public/api/answer.php` uses native PHP OAuth (JWT + token exchange via `openssl` and `curl`).
 - `public/api/recrawl.php` uses the same native PHP OAuth pattern to call Discovery Engine's `siteSearchEngine:recrawlUris` endpoint.

@@ -2,11 +2,13 @@
 // public/api/answer.php
 
 declare(strict_types=1);
+require_once __DIR__ . '/tracking.php';
 
 // -----------------------------
 // Helpers
 // -----------------------------
 function json_out(array $data, int $code = 200): void {
+  tracking_finish($data, $code);
   http_response_code($code);
   header('Content-Type: application/json; charset=utf-8');
   echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -173,6 +175,38 @@ function allowed_answer_urls(array $citations, array $references, array $searchR
   return $allowed;
 }
 
+function strip_model_authored_links(string $text): string {
+  // Source URLs are selected below from structured Agent Search metadata. Do
+  // not let answer-text Markdown or HTML bypass that policy.
+  $text = (string) preg_replace_callback(
+    '~\[([^\]\r\n]+)\]\(\s*(?:<)?https?://[^\s)>]+(?:>)?\s*\)~iu',
+    static function (array $matches): string {
+      return (string) ($matches[1] ?? '');
+    },
+    $text
+  );
+
+  return (string) preg_replace_callback(
+    '~<a\b[^>]*>(.*?)</a>~isu',
+    static function (array $matches): string {
+      return (string) ($matches[1] ?? '');
+    },
+    $text
+  );
+}
+
+function is_generic_pcc_landing_url(string $uri): bool {
+  $parts = parse_url($uri);
+  if (!is_array($parts)) {
+    return false;
+  }
+
+  $host = strtolower((string) ($parts['host'] ?? ''));
+  $path = strtolower(rtrim((string) ($parts['path'] ?? '/'), '/'));
+  return in_array($host, ['pasadena.edu', 'www.pasadena.edu'], true)
+    && ($path === '' || $path === '/index.php');
+}
+
 function sanitize_plain_urls(string $text, array $allowedUrls): string {
   $pattern = '~(?<!["\'=])(https?://[^\s<]+[^\s<\)\]\}\.,;:!?])~i';
 
@@ -246,6 +280,11 @@ function cta_link_targets(array $citations, array $references, array $searchResu
       continue;
     }
     if (mb_strlen($title) < 4) {
+      continue;
+    }
+    // A retrieved homepage is evidence, but it is not a useful inline CTA
+    // when the answer can point to a specific PCC source instead.
+    if (is_generic_pcc_landing_url($uri)) {
       continue;
     }
 
@@ -337,6 +376,7 @@ function linkify_cta_titles(string $text, array $targets): string {
 }
 
 function linkify_answer_text(string $answerText, array $citations, array $references, array $searchResults): string {
+  $answerText = strip_model_authored_links($answerText);
   $allowedUrls = allowed_answer_urls($citations, $references, $searchResults);
   $targets = cta_link_targets($citations, $references, $searchResults);
   $parts = preg_split('/(<[^>]+>)/', $answerText, -1, PREG_SPLIT_DELIM_CAPTURE);
@@ -395,48 +435,6 @@ function repair_approved_routing_ctas(string $text): string {
   return $text;
 }
 
-function append_question_log_csv(
-  string $path,
-  string $question,
-  string $answer,
-  string $timestamp,
-  string $pageUrl,
-  string $ipAddress,
-  array $citations,
-  array $references,
-  array $searchResults
-): void {
-  ensure_dir(dirname($path));
-
-  $fh = fopen($path, 'ab');
-  if ($fh === false) {
-    error_log('CSV log write failed (fopen): ' . $path);
-    return;
-  }
-
-  if (!flock($fh, LOCK_EX)) {
-    error_log('CSV log write failed (flock): ' . $path);
-    fclose($fh);
-    return;
-  }
-
-  if (ftell($fh) === 0) {
-    fputcsv($fh, ['question', 'answer', 'timestamp', 'page_url', 'ip_address', 'reference_urls']);
-  }
-  fputcsv($fh, [
-    $question,
-    $answer,
-    $timestamp,
-    $pageUrl,
-    $ipAddress,
-    reference_urls_for_log($citations, $references, $searchResults),
-  ]);
-  fflush($fh);
-  flock($fh, LOCK_UN);
-
-  fclose($fh);
-}
-
 function post_google_sheets_log(array $sheetConfig, array $payload): void {
   $enabled = ($sheetConfig['enabled'] ?? false) === true;
   $url = trim((string) ($sheetConfig['webhook_url'] ?? ''));
@@ -465,6 +463,8 @@ function post_google_sheets_log(array $sheetConfig, array $payload): void {
   curl_setopt_array($ch, [
     CURLOPT_POST => true,
     CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_MAXREDIRS => 3,
     CURLOPT_HTTPHEADER => $headers,
     CURLOPT_POSTFIELDS => $json,
     CURLOPT_CONNECTTIMEOUT => min(2, $timeout),
@@ -476,8 +476,9 @@ function post_google_sheets_log(array $sheetConfig, array $payload): void {
   $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
   curl_close($ch);
 
-  if ($errNo || $status >= 400) {
-    error_log('Google Sheets log webhook failed. HTTP ' . $status . ' curl_errno=' . $errNo . ' err=' . $err . ' body=' . (string) $response);
+  $result = is_string($response) ? json_decode($response, true) : null;
+  if ($errNo || $status >= 400 || ($result['ok'] ?? false) !== true) {
+    error_log('Google Sheets analytics delivery failed. HTTP ' . $status . ' curl_errno=' . $errNo);
   }
 }
 
@@ -951,8 +952,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 // -----------------------------
 // Rate limiting
 // -----------------------------
+$trackingQuery = tracking_context() + [
+  'event_type' => 'question_answer',
+  'query_timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
+  'question' => mb_substr((string) ($_POST['q'] ?? ''), 0, 500),
+  'previous_query_id' => tracking_id('previous_query_id', false),
+  'turn_number' => max(1, min(100000, (int) ($_POST['turn_number'] ?? 1))),
+  'query_kind' => in_array($_POST['query_kind'] ?? '', ['initial', 'subsequent_query', 'suggested_follow_up'], true) ? $_POST['query_kind'] : 'unknown',
+  'rephrase_status' => ($_POST['rephrase_status'] ?? '') === 'suspected' ? 'suspected' : 'unknown',
+  'rephrase_reason' => ($_POST['rephrase_status'] ?? '') === 'suspected' ? 'token_overlap_at_least_0.6' : '',
+  'retry_of_query_id' => tracking_id('retry_of_query_id', false),
+];
 $ip = client_ip();
-$pageUrl = request_page_url();
+$pageUrl = tracking_page_url();
 if (($config['rate']['enabled'] ?? true) === true) {
   $cap = (int) ($config['rate']['capacity'] ?? 20);
   $ref = (int) ($config['rate']['refill_per_min'] ?? 20);
@@ -980,21 +992,6 @@ if ($sidRaw !== '' && mb_strlen($sidRaw) > 1024) {
 if ($sidRaw === '') {
   // "-" asks Discovery Engine to create a new session for this conversation.
   $sidRaw = '-';
-}
-
-// -----------------------------
-// userPseudoId cookie (server-side)
-// -----------------------------
-if (empty($_COOKIE['vid'])) {
-  $vid = bin2hex(random_bytes(16));
-  setcookie('vid', $vid, [
-    'expires' => time() + 60 * 60 * 24 * 365,
-    'path' => '/',
-    'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
-    'httponly' => true,
-    'samesite' => 'Lax',
-  ]);
-  $_COOKIE['vid'] = $vid;
 }
 
 // -----------------------------
@@ -1029,33 +1026,6 @@ if ($cacheEnabled && is_readable($cachePath)) {
     );
     $cachedAnswer = append_help_centers_cta($cachedAnswer);
     $cached['answer'] = $cachedAnswer;
-    append_question_log_csv(
-      $logDir . '/question_log.csv',
-      $q,
-      $cachedAnswer,
-      $logTimestamp,
-      $pageUrl,
-      $ip,
-      is_array($cached['citations'] ?? null) ? $cached['citations'] : [],
-      is_array($cached['references'] ?? null) ? $cached['references'] : [],
-      is_array($cached['search_results'] ?? null) ? $cached['search_results'] : []
-    );
-    post_google_sheets_log(($config['google_sheets_log'] ?? []), [
-      'timestamp' => $logTimestamp,
-      'question' => $q,
-      'answer' => $cachedAnswer,
-      'reference_urls' => reference_urls_for_log(
-        is_array($cached['citations'] ?? null) ? $cached['citations'] : [],
-        is_array($cached['references'] ?? null) ? $cached['references'] : [],
-        is_array($cached['search_results'] ?? null) ? $cached['search_results'] : []
-      ),
-      'cache' => 'HIT',
-      'sid' => $sidRaw,
-      'session' => (string) (($cached['meta']['session'] ?? '') ?: ''),
-      'page_url' => $pageUrl,
-      'ip' => $ip,
-      'ip_address' => $ip,
-    ]);
     $cached['meta']['cache'] = 'HIT';
     json_out($cached, 200);
   }
@@ -1192,7 +1162,7 @@ For most responses:
 
 Routing expectations:
 - When appropriate, guide the user to the most relevant resource
-- If there is no specific resource or office, direct them to Help Centers and Support [https://pasadena.edu/student-services/get-help/index.php]
+- Use Help Centers and Support only when no direct, verified source or designated office route applies. [https://pasadena.edu/student-services/get-help/index.php]
 - Prefer directing to an office, department, or official PCC webpage rather than providing individualized advice.
 - Do not attempt to replace a counselor or make personalized academic decisions.
 
@@ -1245,6 +1215,18 @@ Links and call-to-action behavior:
 - Limit to 1–2 links per response and only include links that directly support the next step.
 - Do not include links without context or explanation.
 
+Verified-link selection:
+
+- Treat the retrieved reference URLs as the authoritative list of links for the response.
+- When a retrieved source directly answers the user’s question, use that source’s exact full URL as the inline link.
+- Prefer the most specific verified destination available, such as the relevant form, program, course, schedule, department, or procedure page.
+- Do not replace a specific verified URL with a generic PCC homepage, section landing page, or `pasadena.edu` root link.
+- Do not create, infer, shorten, modify, or substitute URLs.
+- Use a generic office or Help Centers link only when no retrieved source provides a direct, relevant destination, or when the question requires account-specific assistance.
+- If more than one verified source is relevant, choose the one that lets the user complete the next action with the fewest additional clicks.
+- Link text must name the destination or action clearly. Avoid “click here,” bare URLs, and links whose destination is not explained.
+- Before including a link, confirm that it is directly relevant to the user’s request—not merely related to the same PCC department or topic.
+
 Approved Routing URLs:
 The following PCC support URLs may always be provided when applicable, even if they are not present in the retrieved content:
 - Help Desk: https://helpdesk.pasadena.edu/support/tickets/new
@@ -1266,7 +1248,7 @@ $body = [
     'ignoreAdversarialQuery' => false,
     'ignoreJailBreakingQuery' => false,
   ],
-  'userPseudoId' => (string) ($_COOKIE['vid'] ?? 'anon'),
+  'userPseudoId' => $trackingQuery['session_id'],
 ];
 
 // -----------------------------
@@ -1359,48 +1341,6 @@ if (is_summary_fallback_message($answerText)) {
 }
 $answerText = linkify_answer_text($answerText, $citations, $references, $searchResults);
 $answerText = append_help_centers_cta($answerText);
-
-// -----------------------------
-// Log
-// -----------------------------
-$logLine = json_encode([
-  'ts' => date('c'),
-  'ip' => $ip,
-  'q' => $q,
-  'sid' => $sidRaw,
-  'session' => $session,
-  'session_out' => $sessionOut ?: null,
-  'elapsed_ms' => $elapsedMs,
-  'cache' => 'MISS',
-  'http' => $httpCode,
-  'page_url' => $pageUrl,
-], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-file_put_contents($logDir . '/requests.log', $logLine . PHP_EOL, FILE_APPEND);
-
-$logTimestamp = date('c');
-append_question_log_csv(
-  $logDir . '/question_log.csv',
-  $q,
-  $answerText,
-  $logTimestamp,
-  $pageUrl,
-  $ip,
-  $citations,
-  $references,
-  $searchResults
-);
-post_google_sheets_log(($config['google_sheets_log'] ?? []), [
-  'timestamp' => $logTimestamp,
-  'question' => $q,
-  'answer' => $answerText,
-  'reference_urls' => reference_urls_for_log($citations, $references, $searchResults),
-  'cache' => 'MISS',
-  'sid' => $sidRaw,
-  'session' => (string) ($sessionOut ?: $session),
-  'page_url' => $pageUrl,
-  'ip' => $ip,
-  'ip_address' => $ip,
-]);
 
 // -----------------------------
 // Output + cache store

@@ -72,7 +72,7 @@ return [
     'enabled' => env('PCC_GSHEETS_LOG_ENABLED', '1') === '1',
     'webhook_url' => env(
       'PCC_GSHEETS_WEBHOOK_URL',
-      'https://script.google.com/macros/s/AKfycbw4YfZzyO_g6ZeibQVtfI5v4qU6dnHrHjTe_noYJ5oPk-hAvYnOl-VIXA_3RreN0wZucA/exec'
+      'https://script.google.com/macros/s/AKfycbyEf1_vcaAvSicX0GW6N56MUbTVqArrD_61TMVqL20zrKeAB0RAHj8P2yu_a23hRYNC1Q/exec'
     ),
     'webhook_token' => env(
       'PCC_GSHEETS_WEBHOOK_TOKEN',

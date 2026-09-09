@@ -1,12 +1,21 @@
 // public/embed.js
 // Usage: <script src="https://YOURDOMAIN/embed.js" data-endpoint="https://YOURDOMAIN/api/answer.php"></script>
-(() => {
+(async () => {
   const script = document.currentScript;
   const endpoint = script?.dataset?.endpoint;
   const feedbackEndpoint = script?.dataset?.feedbackEndpoint;
   if (!endpoint || !feedbackEndpoint) return;
 
-  const SESSION_KEY = "pcc_vertex_embed_session";
+  if (!window.PccAnalytics) {
+    const analyticsScript = document.createElement('script');
+    analyticsScript.src = new URL('analytics.js', script.src).href;
+    await new Promise((resolve, reject) => {
+      analyticsScript.onload = resolve;
+      analyticsScript.onerror = reject;
+      document.head.appendChild(analyticsScript);
+    });
+  }
+  const tracker = window.PccAnalytics.create(feedbackEndpoint);
   const ROOT_ID = "pcc-vertex-widget";
   const MODAL_ID = "pccVertexWidgetModal";
   const WIDGET_STYLE_ID = "pcc-vertex-widget-styles";
@@ -188,7 +197,7 @@
                         </div>
                         <form id="pccw-feedback-form" class="d-none mt-2" novalidate>
                           <div class="input-group input-group-sm">
-                            <input id="pccw-feedback-input" class="form-control" type="text" maxlength="500" placeholder="Tell us what was missing or incorrect" />
+                            <input id="pccw-feedback-input" class="form-control" type="text" maxlength="500" placeholder="Optional: tell us what was missing or incorrect" />
                             <button id="pccw-feedback-submit" class="btn btn-outline-primary" type="submit">Submit</button>
                           </div>
                         </form>
@@ -364,8 +373,8 @@
   }
 
   function setFeedbackLoading(on) {
-    el.feedbackPositive.disabled = on;
-    el.feedbackNegative.disabled = on;
+    el.feedbackPositive.disabled = on || Boolean(currentFeedbackContext.ratingSaved);
+    el.feedbackNegative.disabled = on || Boolean(currentFeedbackContext.ratingSaved);
     el.feedbackInput.disabled = on;
     el.feedbackSubmit.disabled = on;
   }
@@ -396,8 +405,8 @@
     el.feedbackNegative.classList.remove("text-dark", "opacity-50");
     el.feedbackPositive.disabled = false;
     el.feedbackNegative.disabled = false;
-    setFeedbackLoading(false);
     currentFeedbackContext = { question: "", answer: "" };
+    setFeedbackLoading(false);
 
     el.anchors.innerHTML = "";
     el.anchors.classList.add("d-none");
@@ -459,21 +468,15 @@
   }
 
   async function submitFeedback({ rating, feedback = "" }) {
-    const res = await fetch(feedbackEndpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-      body: new URLSearchParams({
-        question: currentFeedbackContext.question,
-        answer: currentFeedbackContext.answer,
-        rating,
-        feedback,
-        page_url: window.location.href,
-      }),
-      credentials: "omit"
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data?.error || `Feedback request failed (${res.status})`);
+    const context = currentFeedbackContext;
+    if (feedback) {
+      await tracker.event(context.tracking, 'feedback_comment', {
+        feedback, parent_event_id: context.ratingEventId
+      }, context.commentEventId ||= crypto.randomUUID());
+    } else {
+      const eventId = context.ratingEventId ||= crypto.randomUUID();
+      await tracker.event(context.tracking, 'feedback', { rating }, eventId);
+      context.ratingSaved = true;
     }
   }
 
@@ -497,15 +500,23 @@
     }
   }
 
-  function handleNegativeFeedbackStart() {
-    el.feedbackNegative.classList.add("text-dark");
-    el.feedbackNegative.classList.remove("opacity-50");
-    el.feedbackPositive.classList.remove("text-dark");
-    el.feedbackPositive.classList.add("opacity-50");
-    lockFeedbackChoice("down");
-    el.feedbackThanks.classList.add("d-none");
-    el.feedbackForm.classList.remove("d-none");
-    el.feedbackInput.focus({ preventScroll: true });
+  async function handleNegativeFeedbackStart() {
+    setFeedbackLoading(true);
+    try {
+      await submitFeedback({ rating: "down" });
+      el.feedbackNegative.classList.add("text-dark");
+      el.feedbackNegative.classList.remove("opacity-50");
+      el.feedbackPositive.classList.remove("text-dark");
+      el.feedbackPositive.classList.add("opacity-50");
+      lockFeedbackChoice("down");
+      el.feedbackThanks.classList.add("d-none");
+      el.feedbackForm.classList.remove("d-none");
+    } catch (e) {
+      setError(e?.message || "Unable to save feedback.");
+    } finally {
+      setFeedbackLoading(false);
+      if (currentFeedbackContext.ratingSaved) el.feedbackInput.focus({ preventScroll: true });
+    }
   }
 
   async function handleNegativeFeedbackSubmit(event) {
@@ -677,22 +688,25 @@
       resetForAsk();
       setLoading(true);
 
+      const request = tracker.begin(Boolean(prefillQuestion), text);
       const send = async (sid) => {
         const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-          body: new URLSearchParams({ q: text, sid, page_url: window.location.href }),
+          body: new URLSearchParams({ ...request.payload, q: text, sid }),
           credentials: "omit"
         });
         const data = await res.json().catch(() => ({}));
         return { res, data };
       };
 
-      let sid = localStorage.getItem(SESSION_KEY) || "";
+      let sid = request.sid;
       let { res, data } = await send(sid);
 
       if (!res.ok && sid && (res.status === 400 || res.status === 404)) {
-        localStorage.removeItem(SESSION_KEY);
+        tracker.complete(request.payload, "");
+        request.payload.retry_of_query_id = request.payload.query_id;
+        request.payload.query_id = crypto.randomUUID();
         ({ res, data } = await send(""));
       }
 
@@ -702,7 +716,7 @@
 
       renderQuestionPill(text);
       renderAnswer(data.answer);
-      currentFeedbackContext = { question: text, answer: String(data.answer || "") };
+      currentFeedbackContext = { question: text, answer: String(data.answer || ""), tracking: data.meta.tracking };
       renderCitations(data.citations || []);
       renderReferences(data.references || []);
       renderAnswerAnchors(data.citations || []);
@@ -710,8 +724,8 @@
       renderFollowUps(data.related_questions || []);
       el.feedbackWrap.classList.remove("d-none");
 
-      if (data?.meta?.session) {
-        localStorage.setItem(SESSION_KEY, data.meta.session);
+      if (data?.meta) {
+        tracker.complete(request.payload, data.meta.session);
       }
 
       if (Array.isArray(data.search_results) && data.search_results.length > 0) {
@@ -728,6 +742,8 @@
     }
   }
 
+  tracker.watchHelp(el.result, () => currentFeedbackContext.tracking);
+
   el.ask.addEventListener("click", () => ask());
   el.q.addEventListener("keydown", (e) => {
     if (e.key === "Enter") ask();
@@ -736,7 +752,7 @@
     focusQuestionInput();
   });
   el.newChat.addEventListener("click", () => {
-    localStorage.removeItem(SESSION_KEY);
+    tracker.newChat();
     setError("");
     el.status.textContent = "Started a new chat session.";
     setAskControlsVisible(true);

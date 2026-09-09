@@ -210,7 +210,7 @@ if ($documentRoot !== '') {
                     </div>
                     <form id="feedbackForm" class="d-none mt-2" novalidate>
                       <div class="input-group input-group-sm">
-                        <input id="feedbackInput" class="form-control" type="text" maxlength="500" placeholder="Tell us what was missing or incorrect" />
+                        <input id="feedbackInput" class="form-control" type="text" maxlength="500" placeholder="Optional: tell us what was missing or incorrect" />
                         <button id="feedbackSubmitBtn" class="btn btn-outline-primary" type="submit">Submit</button>
                       </div>
                     </form>
@@ -261,11 +261,12 @@ if ($documentRoot !== '') {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+<script src="analytics.js"></script>
 <script>
 const $ = (sel) => document.querySelector(sel);
-const SESSION_KEY = "pcc_vertex_session";
 const API_ENDPOINT = <?= json_encode($apiEndpoint, JSON_UNESCAPED_SLASHES) ?>;
 const FEEDBACK_ENDPOINT = <?= json_encode($feedbackEndpoint, JSON_UNESCAPED_SLASHES) ?>;
+const tracker = window.PccAnalytics.create(FEEDBACK_ENDPOINT);
 let referenceLookup = new Map();
 let activePopovers = [];
 let currentFeedbackContext = { question: "", answer: "" };
@@ -304,8 +305,8 @@ function clearError() {
 }
 
 function setFeedbackLoading(isLoading) {
-  $("#feedbackPositiveBtn").disabled = isLoading;
-  $("#feedbackNegativeBtn").disabled = isLoading;
+  $("#feedbackPositiveBtn").disabled = isLoading || Boolean(currentFeedbackContext.ratingSaved);
+  $("#feedbackNegativeBtn").disabled = isLoading || Boolean(currentFeedbackContext.ratingSaved);
   $("#feedbackInput").disabled = isLoading;
   $("#feedbackSubmitBtn").disabled = isLoading;
 }
@@ -334,22 +335,15 @@ function resetFeedback() {
 }
 
 async function submitFeedback({ rating, feedback = "" }) {
-  const payload = new URLSearchParams({
-    question: currentFeedbackContext.question,
-    answer: currentFeedbackContext.answer,
-    rating,
-    feedback,
-    page_url: window.location.href,
-  });
-
-  const res = await fetch(FEEDBACK_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-    body: payload,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data?.error || `Feedback request failed (${res.status})`);
+  const context = currentFeedbackContext;
+  if (feedback) {
+    await tracker.event(context.tracking, 'feedback_comment', {
+      feedback, parent_event_id: context.ratingEventId
+    }, context.commentEventId ||= crypto.randomUUID());
+  } else {
+    const eventId = context.ratingEventId ||= crypto.randomUUID();
+    await tracker.event(context.tracking, 'feedback', { rating }, eventId);
+    context.ratingSaved = true;
   }
 }
 
@@ -373,15 +367,23 @@ async function handlePositiveFeedback() {
   }
 }
 
-function handleNegativeFeedbackStart() {
-  $("#feedbackNegativeBtn").classList.add("text-dark");
-  $("#feedbackNegativeBtn").classList.remove("opacity-50");
-  $("#feedbackPositiveBtn").classList.remove("text-dark");
-  $("#feedbackPositiveBtn").classList.add("opacity-50");
-  lockFeedbackChoice("down");
-  $("#feedbackThanks").classList.add("d-none");
-  $("#feedbackForm").classList.remove("d-none");
-  $("#feedbackInput").focus({ preventScroll: true });
+async function handleNegativeFeedbackStart() {
+  setFeedbackLoading(true);
+  try {
+    await submitFeedback({ rating: "down" });
+    $("#feedbackNegativeBtn").classList.add("text-dark");
+    $("#feedbackNegativeBtn").classList.remove("opacity-50");
+    $("#feedbackPositiveBtn").classList.remove("text-dark");
+    $("#feedbackPositiveBtn").classList.add("opacity-50");
+    lockFeedbackChoice("down");
+    $("#feedbackThanks").classList.add("d-none");
+    $("#feedbackForm").classList.remove("d-none");
+  } catch (e) {
+    showError(e?.message || "Unable to save feedback.");
+  } finally {
+    setFeedbackLoading(false);
+    if (currentFeedbackContext.ratingSaved) $("#feedbackInput").focus({ preventScroll: true });
+  }
 }
 
 async function handleNegativeFeedbackSubmit(e) {
@@ -651,21 +653,24 @@ async function ask(prefillQuestion = null) {
   setLoading(true);
 
   try {
+    const request = tracker.begin(Boolean(prefillQuestion), q);
     const send = async (sid) => {
       const res = await fetch(API_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body: new URLSearchParams({ q, sid, page_url: window.location.href }),
+        body: new URLSearchParams({ ...request.payload, q, sid }),
       });
       const data = await res.json().catch(() => ({}));
       return { res, data };
     };
 
-    let sid = localStorage.getItem(SESSION_KEY) || "";
+    let sid = request.sid;
     let { res, data } = await send(sid);
 
     if (!res.ok && sid && (res.status === 400 || res.status === 404)) {
-      localStorage.removeItem(SESSION_KEY);
+      tracker.complete(request.payload, "");
+      request.payload.retry_of_query_id = request.payload.query_id;
+      request.payload.query_id = crypto.randomUUID();
       ({ res, data } = await send(""));
     }
 
@@ -676,7 +681,7 @@ async function ask(prefillQuestion = null) {
 
     renderQuestionPill(q);
     renderAnswerText(data.answer);
-    currentFeedbackContext = { question: q, answer: String(data.answer || "") };
+    currentFeedbackContext = { question: q, answer: String(data.answer || ""), tracking: data.meta.tracking };
     renderCitations(data.citations || []);
     renderReferences(data.references || []);
     renderAnswerCitations(data.citations || []);
@@ -688,8 +693,8 @@ async function ask(prefillQuestion = null) {
     $("#debug").textContent = JSON.stringify(data, null, 2);
     $("#feedbackWrap").classList.remove("d-none");
 
-    if (data?.meta?.session) {
-      localStorage.setItem(SESSION_KEY, data.meta.session);
+    if (data?.meta) {
+      tracker.complete(request.payload, data.meta.session);
     }
     $("#q").value = "";
     $("#result").classList.remove("d-none");
@@ -701,12 +706,14 @@ async function ask(prefillQuestion = null) {
   }
 }
 
+tracker.watchHelp($("#result"), () => currentFeedbackContext.tracking);
+
 $("#modalAskBtn").addEventListener("click", () => ask());
 $("#q").addEventListener("keydown", (e) => {
   if (e.key === "Enter") ask();
 });
 $("#newChatBtn").addEventListener("click", () => {
-  localStorage.removeItem(SESSION_KEY);
+  tracker.newChat();
   $("#status").textContent = "Started a new chat session.";
   $("#modalStatus").textContent = "";
   setAskControlsVisible(true);
