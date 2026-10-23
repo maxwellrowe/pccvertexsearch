@@ -98,6 +98,7 @@ if ($documentRoot !== '') {
     .feedback-panel {
       width: 100%;
     }
+    #feedbackWrap * { font-size: .85rem; }
     .feedback-header {
       display: flex;
       flex-wrap: wrap;
@@ -163,8 +164,8 @@ if ($documentRoot !== '') {
 <div class="modal fade" id="askModal" tabindex="-1" aria-labelledby="askModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header">
-        <h2 class="modal-title h5 pcc-modal-title" id="askModalLabel">
+      <div class="modal-header border-0 pb-0 justify-content-end">
+        <h2 class="visually-hidden" id="askModalLabel">
           <span class="pcc-modal-title-icon-wrap" aria-hidden="true">
             <img class="pcc-modal-title-icon" src="/images/lance-profile.png" alt="" />
           </span>
@@ -175,26 +176,29 @@ if ($documentRoot !== '') {
       <div class="modal-body">
         <div id="askControls" class="d-flex gap-2 align-items-end">
           <div id="qWrap" class="flex-grow-1">
-            <label id="qLabel" class="form-label" for="q">What would you like to ask?</label>
-            <input id="q" class="form-control" type="text" placeholder="e.g., how do I get started at PCC?" />
+            <div class="d-flex align-items-center gap-2 mb-1">
+                  <img src="/images/lance-profile.png" alt="" aria-hidden="true" class="rounded-circle flex-shrink-0" style="height:2rem;width:auto" />
+                  <label id="qLabel" class="form-label h5 m-0" for="q">Ask a Question or Search</label>
+                </div>
+                <input id="q" class="form-control" type="search" maxlength="500" placeholder="Search programs, services, and more" />
           </div>
-          <button id="modalAskBtn" class="btn btn-primary" type="button">Ask</button>
+          <button id="modalAskBtn" class="btn btn-primary" type="button">Search</button>
         </div>
         <div id="modalStatus" class="small-muted mt-2"></div>
         <div id="error" class="alert alert-danger d-none mt-3"></div>
 
-        <div id="result" class="card shadow-sm d-none">
-          <div class="card-body">
+        <div id="result" class="card d-none">
+          <div>
             <div id="questionPill" class="d-none mb-2 p-1 border rounded-3 bg-light text-dark small"></div>
-            <div class="border border-light-subtle rounded-3 p-2 mb-3">
+            <div class="border border-primary rounded-3 p-2 mb-3">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <h2 class="h6 mb-0">Answer</h2>
+                <p class="fs-8 mb-0 fw-bold d-flex align-items-center"><img src="./images/pcc-ai-sparkle.svg" alt="" aria-hidden="true" width="24" height="24" class="me-1" style="vertical-align:middle" />AI Overview</p>
                 <a id="metaLink" class="small d-none" href="#searchWrap">View Search Results</a>
               </div>
               <div id="answer" class="answer">
                 <div id="answerBody"></div>
-                <div class="feedback-actions">
-                  <div id="feedbackWrap" class="feedback-panel card bg-light border-1 p-2 d-none">
+                <div id="answerFeedback" class="feedback-actions">
+                  <div id="feedbackWrap" class="feedback-panel card bg-light border-1 p-2 mb-2 d-none">
                     <div class="feedback-header">
                       <div id="feedbackPrompt" class="feedback-prompt">Was this answer helpful?</div>
                       <div id="feedbackControls" class="feedback-controls gap-2">
@@ -220,6 +224,12 @@ if ($documentRoot !== '') {
                     <button id="askAnotherBtn" class="btn btn-outline-primary btn-xs" type="button">Ask Another Question</button>
                   </div>
                 </div>
+            <div id="referencesWrap" class="d-none mt-3">
+              <details>
+                <summary class="fs-8 fw-bold mb-2">References</summary>
+                <ol id="references" class="small mb-0"></ol>
+              </details>
+            </div>
                 <div id="answerHelp" class="mt-3"></div>
               </div>
             </div>
@@ -230,12 +240,7 @@ if ($documentRoot !== '') {
               <ol id="citations" class="small"></ol>
             </div>
 
-            <div id="referencesWrap" class="d-none mt-3">
-              <details>
-                <summary class="h6 mb-2">References</summary>
-                <ol id="references" class="small mb-0"></ol>
-              </details>
-            </div>
+
 
             <div id="searchWrap" class="d-none mt-3">
               <h3 class="h6">Search Results</h3>
@@ -262,6 +267,7 @@ if ($documentRoot !== '') {
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
 <script src="analytics.js"></script>
+<script src="search-ui.js"></script>
 <script>
 const $ = (sel) => document.querySelector(sel);
 const API_ENDPOINT = <?= json_encode($apiEndpoint, JSON_UNESCAPED_SLASHES) ?>;
@@ -271,14 +277,7 @@ let referenceLookup = new Map();
 let activePopovers = [];
 let currentFeedbackContext = { question: "", answer: "" };
 
-function setAskControlsVisible(isVisible) {
-  $("#askControls").classList.toggle("d-none", !isVisible);
-  $("#qWrap").hidden = !isVisible;
-  $("#qLabel").hidden = !isVisible;
-  $("#q").hidden = !isVisible;
-  $("#modalAskBtn").hidden = !isVisible;
-  $("#askAnotherWrap").classList.toggle("d-none", isVisible);
-}
+
 
 function focusQuestionInput() {
   const input = $("#q");
@@ -286,12 +285,13 @@ function focusQuestionInput() {
   input.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-function setLoading(isLoading) {
-  $("#modalAskBtn").disabled = isLoading;
-  $("#openAskModalBtn").disabled = isLoading;
-  const loadingHtml = '<span class="d-inline-flex align-items-center gap-1"><svg width="12" height="12" viewBox="0 0 50 50" aria-hidden="true"><circle cx="25" cy="25" r="20" fill="none" stroke="#be1e2d" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4"><animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="0.9s" repeatCount="indefinite"/></circle></svg><span>Thinking… (Lance is trotting to the sources)</span></span>';
-  $("#status").innerHTML = isLoading ? loadingHtml : "";
-  $("#modalStatus").innerHTML = isLoading ? loadingHtml : "";
+const progress = window.PccSearchUI.progress($("#modalStatus"));
+let busy = false;
+function setLoading(on, success = false) {
+  busy = on;
+  $("#modalAskBtn").disabled = on;
+  $("#q").disabled = on;
+  if (on) progress.start(); else progress.finish(success);
 }
 
 function showError(msg) {
@@ -415,9 +415,7 @@ function renderAnswerText(text) {
     return;
   }
 
-  const ctaMatch = raw.match(/<hr class="my-2"\s*\/>\s*<strong>Need additional help\?<\/strong>[\s\S]*$/i);
-  const bodyRaw = ctaMatch ? raw.slice(0, ctaMatch.index).trimEnd() : raw;
-  const helpRaw = ctaMatch ? ctaMatch[0] : "";
+  const { bodyRaw, helpRaw } = window.PccSearchUI.splitAnswer(raw);
 
   try {
     const html = marked.parse(bodyRaw, { breaks: true, gfm: true });
@@ -543,7 +541,7 @@ function renderSearchResults(results) {
     const title = r?.title || r?.uri || "Result";
     const uri = r?.uri || "";
     const description = r?.description || r?.snippet || "";
-    const urlLine = uri ? `<div class="small text-dark">${escapeHtml(uri)}</div>` : "";
+    const urlLine = uri ? `<div class="small text-dark">${escapeHtml(uri)}${window.PccSearchUI.externalResultIcon(uri)}</div>` : "";
     const snippet = description ? `<div class="text-muted mt-1">${escapeHtml(description)}</div>` : "";
     item.innerHTML = uri
       ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${urlLine}${snippet}`
@@ -634,9 +632,13 @@ function renderAnswerCitations(citations) {
 }
 
 async function ask(prefillQuestion = null) {
+    if (busy) return;
+    let succeeded = false;
+    const timings = window.PccTimings.begin();
+    document.querySelectorAll('[data-pcc-timings]').forEach(node => node.remove());
   clearError();
   resetPopovers();
-  setAskControlsVisible(true);
+
   $("#result").classList.add("d-none");
   $("#debug").textContent = "";
   $("#metaLink").classList.add("d-none");
@@ -654,15 +656,16 @@ async function ask(prefillQuestion = null) {
 
   try {
     const request = tracker.begin(Boolean(prefillQuestion), q);
-    const send = async (sid) => {
+    timings.ready();
+    const send = async (sid) => timings.send(async () => {
       const res = await fetch(API_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body: new URLSearchParams({ ...request.payload, q, sid }),
+        body: new URLSearchParams({ ...request.payload, ...timings.payload, q, sid }),
       });
       const data = await res.json().catch(() => ({}));
       return { res, data };
-    };
+    });
 
     let sid = request.sid;
     let { res, data } = await send(sid);
@@ -679,7 +682,7 @@ async function ask(prefillQuestion = null) {
       throw new Error(data?.error || `Request failed (${res.status})`);
     }
 
-    renderQuestionPill(q);
+    $("#q").value = q;
     renderAnswerText(data.answer);
     currentFeedbackContext = { question: q, answer: String(data.answer || ""), tracking: data.meta.tracking };
     renderCitations(data.citations || []);
@@ -691,18 +694,22 @@ async function ask(prefillQuestion = null) {
       $("#metaLink").classList.remove("d-none");
     }
     $("#debug").textContent = JSON.stringify(data, null, 2);
-    $("#feedbackWrap").classList.remove("d-none");
+    if (tracker.loggingEnabled) $("#feedbackWrap").classList.remove("d-none");
 
     if (data?.meta) {
       tracker.complete(request.payload, data.meta.session);
     }
-    $("#q").value = "";
+
     $("#result").classList.remove("d-none");
-    setAskControlsVisible(false);
+
+    window.PccSearchUI.answer($("#answerBody"), $("#referencesWrap"), $("#answerHelp"), $("#answerFeedback"));
+    succeeded = true;
+      timings.show($("#answerBody"));
   } catch (e) {
     showError(e?.message || "Something went wrong.");
+      timings.show($("#error"));
   } finally {
-    setLoading(false);
+    setLoading(false, succeeded);
   }
 }
 
@@ -716,10 +723,10 @@ $("#newChatBtn").addEventListener("click", () => {
   tracker.newChat();
   $("#status").textContent = "Started a new chat session.";
   $("#modalStatus").textContent = "";
-  setAskControlsVisible(true);
+
 });
 $("#askAnotherBtn").addEventListener("click", () => {
-  setAskControlsVisible(true);
+
   focusQuestionInput();
 });
 $("#feedbackPositiveBtn").addEventListener("click", handlePositiveFeedback);

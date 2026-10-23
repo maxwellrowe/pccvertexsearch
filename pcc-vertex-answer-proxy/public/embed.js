@@ -15,6 +15,22 @@
       document.head.appendChild(analyticsScript);
     });
   }
+  if (!window.PccSearchUI) {
+    await new Promise((resolve, reject) => {
+      const tag = document.createElement('script');
+      tag.src = new URL('search-ui.js', script.src).href;
+      tag.onload = resolve;
+      tag.onerror = reject;
+      document.head.appendChild(tag);
+    });
+  }
+  if (!document.querySelector('link[href*="font-awesome"], link[href*="fontawesome"]')) {
+    const icons = document.createElement('link');
+    icons.rel = 'stylesheet';
+    icons.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css';
+    document.head.appendChild(icons);
+  }
+  const inline = script.dataset.mode === 'inline';
   const tracker = window.PccAnalytics.create(feedbackEndpoint);
   const ROOT_ID = "pcc-vertex-widget";
   const MODAL_ID = "pccVertexWidgetModal";
@@ -144,8 +160,8 @@
     <div class="modal fade" id="${MODAL_ID}" tabindex="-1" aria-labelledby="${MODAL_ID}Label" aria-hidden="true">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
-          <div class="modal-header">
-            <h2 class="modal-title h5 pccw-modal-title" id="${MODAL_ID}Label">
+          <div class="modal-header border-0 pb-0 justify-content-end">
+            <h2 class="visually-hidden" id="${MODAL_ID}Label">
               <span class="pccw-modal-title-icon-wrap" aria-hidden="true">
                 <img class="pccw-modal-title-icon" src="/images/lance-profile.png" alt="" />
               </span>
@@ -156,25 +172,28 @@
           <div class="modal-body">
             <div id="pccw-ask-controls" class="d-flex gap-2 align-items-end">
               <div id="pccw-q-wrap" class="flex-grow-1">
-                <label id="pccw-q-label" class="form-label" for="pccw-q">What would you like to ask?</label>
-                <input id="pccw-q" class="form-control" type="text" placeholder="e.g., how do I get started at PCC?" />
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  <img src="/images/lance-profile.png" alt="" aria-hidden="true" class="rounded-circle flex-shrink-0" style="height:2rem;width:auto" />
+                  <label id="pccw-q-label" class="form-label h5 m-0" for="pccw-q">Ask a Question or Search</label>
+                </div>
+                <input id="pccw-q" class="form-control" type="search" maxlength="500" placeholder="Search programs, services, and more" />
               </div>
-              <button type="button" id="pccw-ask" class="btn btn-primary">Ask</button>
+              <button type="button" id="pccw-ask" class="btn btn-primary">Search</button>
             </div>
             <div id="pccw-status" class="small text-muted mt-2"></div>
             <div id="pccw-error" class="alert alert-danger d-none mt-3"></div>
 
-            <div id="pccw-result" class="card shadow-sm d-none mt-3">
-              <div class="card-body">
+            <div id="pccw-result" class="card d-none mt-3">
+              <div>
                 <div id="pccw-question-pill" class="d-none mb-2 p-1 border rounded-3 bg-light text-dark small"></div>
-                <div class="border border-light-subtle rounded-3 p-2 mb-3">
+                <div class="border border-primary rounded-3 p-2 mb-3">
                   <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h3 class="h6 mb-0">Answer</h3>
+                    <p class="fs-8 mb-0 fw-bold d-flex align-items-center"><img src="${new URL("images/pcc-ai-sparkle.svg", script.src).href}" alt="" aria-hidden="true" width="24" height="24" class="me-1" style="vertical-align:middle" />AI Overview</p>
                     <a id="pccw-meta-link" class="small d-none" href="#pccw-search-wrap">View Search Results</a>
                   </div>
                   <div id="pccw-answer">
                     <div id="pccw-answer-body"></div>
-                    <div class="pccw-feedback-actions">
+                    <div id="pccw-answer-feedback" class="pccw-feedback-actions">
                       <div id="pccw-feedback-wrap" class="pccw-feedback-panel card bg-light border-1 p-2 d-none">
                         <div class="pccw-feedback-header">
                           <div class="pccw-feedback-prompt">Was this answer helpful?</div>
@@ -207,6 +226,12 @@
                         <button type="button" id="pccw-ask-another" class="btn btn-outline-primary">Ask Another Question</button>
                       </div>
                     </div>
+                <div id="pccw-refs-wrap" class="d-none mt-3">
+                  <details>
+                    <summary class="fs-8 fw-bold mb-2">References</summary>
+                    <ol id="pccw-refs" class="small mb-0"></ol>
+                  </details>
+                </div>
                     <div id="pccw-answer-help" class="mt-3"></div>
                   </div>
                 </div>
@@ -217,12 +242,7 @@
                   <ol id="pccw-cites" class="small"></ol>
                 </div>
 
-                <div id="pccw-refs-wrap" class="d-none mt-3">
-                  <details>
-                    <summary class="h6 mb-2">References</summary>
-                    <ol id="pccw-refs" class="small mb-0"></ol>
-                  </details>
-                </div>
+
 
                 <div id="pccw-search-wrap" class="d-none mt-3">
                   <h4 class="h6">Search Results</h4>
@@ -244,7 +264,8 @@
       </div>
     </div>
   `;
-  document.body.appendChild(root);
+  if (inline) script.before(root);
+  else document.body.appendChild(root);
 
   const el = {
     launch: root.querySelector("#pccw-launch"),
@@ -282,19 +303,18 @@
     fuWrap: root.querySelector("#pccw-fu-wrap"),
     fu: root.querySelector("#pccw-fu"),
   };
+  if (inline) {
+    // Keep just the search body: no fixed launcher, dialog, header or footer.
+    const body = root.querySelector('.modal-body');
+    body.classList.remove('modal-body');
+    root.replaceChildren(body);
+  }
   let widgetModal = null;
   let referenceLookup = new Map();
   let markdownLoadPromise = null;
   let currentFeedbackContext = { question: "", answer: "" };
 
-  function setAskControlsVisible(isVisible) {
-    el.askControls.classList.toggle("d-none", !isVisible);
-    el.qWrap.hidden = !isVisible;
-    el.qLabel.hidden = !isVisible;
-    el.q.hidden = !isVisible;
-    el.ask.hidden = !isVisible;
-    el.askAnotherWrap.classList.toggle("d-none", isVisible);
-  }
+
 
   function focusQuestionInput() {
     el.q.focus({ preventScroll: true });
@@ -336,6 +356,7 @@
   }
 
   function ensureModalReady() {
+    if (inline) return { show() {} };
     if (widgetModal) {
       return widgetModal;
     }
@@ -366,10 +387,13 @@
     el.error.classList.remove("d-none");
   }
 
-  function setLoading(on) {
+  const progress = window.PccSearchUI.progress(el.status);
+  let busy = false;
+  function setLoading(on, success = false) {
+    busy = on;
     el.ask.disabled = on;
-    const loadingHtml = '<span class="d-inline-flex align-items-center gap-1"><svg width="12" height="12" viewBox="0 0 50 50" aria-hidden="true"><circle cx="25" cy="25" r="20" fill="none" stroke="#be1e2d" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4"><animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="0.9s" repeatCount="indefinite"/></circle></svg><span>Thinking… (Lance is trotting to the sources)</span></span>';
-    el.status.innerHTML = on ? loadingHtml : "";
+    el.q.disabled = on;
+    if (on) progress.start(); else progress.finish(success);
   }
 
   function setFeedbackLoading(on) {
@@ -434,9 +458,7 @@
       return;
     }
 
-    const ctaMatch = text.match(/<hr class="my-2"\s*\/>\s*<strong>Need additional help\?<\/strong>[\s\S]*$/i);
-    const bodyRaw = ctaMatch ? text.slice(0, ctaMatch.index).trimEnd() : text;
-    const helpRaw = ctaMatch ? ctaMatch[0] : "";
+    const { bodyRaw, helpRaw } = window.PccSearchUI.splitAnswer(text);
 
     if (window.marked && window.DOMPurify) {
       try {
@@ -641,7 +663,7 @@
       const title = r?.title || r?.uri || "Result";
       const uri = r?.uri || "";
       const description = r?.description || r?.snippet || "";
-      const urlLine = uri ? `<div class="small text-dark">${escapeHtml(uri)}</div>` : "";
+      const urlLine = uri ? `<div class="small text-dark">${escapeHtml(uri)}${window.PccSearchUI.externalResultIcon(uri)}</div>` : "";
       const descriptionLine = description ? `<div class="text-muted mt-1">${escapeHtml(description)}</div>` : "";
       li.innerHTML = uri
         ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${urlLine}${descriptionLine}`
@@ -674,6 +696,10 @@
   }
 
   async function ask(prefillQuestion = "") {
+    if (busy) return;
+    let succeeded = false;
+    const timings = window.PccTimings.begin();
+    document.querySelectorAll('[data-pcc-timings]').forEach(node => node.remove());
     const text = String(prefillQuestion || el.q.value).trim();
     if (!text) {
       setError("Please enter a question.");
@@ -682,23 +708,30 @@
 
     try {
       const modal = ensureModalReady();
-      await ensureMarkdownReady();
       modal.show();
-      setAskControlsVisible(true);
+
       resetForAsk();
       setLoading(true);
+      await ensureMarkdownReady();
 
+      if (inline && !prefillQuestion) tracker.newChat();
+      if (inline) {
+        const url = new URL(location.href);
+        url.searchParams.set(script.dataset.queryParam || 'q', text);
+        history.replaceState(null, '', url);
+      }
       const request = tracker.begin(Boolean(prefillQuestion), text);
-      const send = async (sid) => {
+      timings.ready();
+      const send = async (sid) => timings.send(async () => {
         const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-          body: new URLSearchParams({ ...request.payload, q: text, sid }),
+          body: new URLSearchParams({ ...request.payload, ...timings.payload, q: text, sid }),
           credentials: "omit"
         });
         const data = await res.json().catch(() => ({}));
         return { res, data };
-      };
+      });
 
       let sid = request.sid;
       let { res, data } = await send(sid);
@@ -714,7 +747,7 @@
         throw new Error(data?.error || `Request failed (${res.status})`);
       }
 
-      renderQuestionPill(text);
+      el.q.value = text;
       renderAnswer(data.answer);
       currentFeedbackContext = { question: text, answer: String(data.answer || ""), tracking: data.meta.tracking };
       renderCitations(data.citations || []);
@@ -722,7 +755,7 @@
       renderAnswerAnchors(data.citations || []);
       renderSearch(data.search_results || []);
       renderFollowUps(data.related_questions || []);
-      el.feedbackWrap.classList.remove("d-none");
+      if (tracker.loggingEnabled) el.feedbackWrap.classList.remove("d-none");
 
       if (data?.meta) {
         tracker.complete(request.payload, data.meta.session);
@@ -732,13 +765,16 @@
         el.metaLink.classList.remove("d-none");
       }
       el.result.classList.remove("d-none");
-      el.q.value = "";
-      setAskControlsVisible(false);
-      el.status.textContent = "";
+
+
+      window.PccSearchUI.answer(el.answerBody, el.refsWrap, el.answerHelp, root.querySelector("#pccw-answer-feedback"));
+    succeeded = true;
+      timings.show(el.answerBody);
     } catch (e) {
       setError(e?.message || "Something went wrong.");
+      timings.show(el.error);
     } finally {
-      setLoading(false);
+      setLoading(false, succeeded);
     }
   }
 
@@ -755,10 +791,10 @@
     tracker.newChat();
     setError("");
     el.status.textContent = "Started a new chat session.";
-    setAskControlsVisible(true);
+
   });
   el.askAnother.addEventListener("click", () => {
-    setAskControlsVisible(true);
+
     focusQuestionInput();
   });
   el.feedbackPositive.addEventListener("click", handlePositiveFeedback);
@@ -766,4 +802,8 @@
   el.feedbackForm.addEventListener("submit", handleNegativeFeedbackSubmit);
 
   ensureMarkdownReady().catch(() => {});
+  if (inline) {
+    const initial = new URLSearchParams(location.search).get(script.dataset.queryParam || 'q');
+    if (initial && initial.trim()) { el.q.value = initial; ask(); }
+  }
 })();

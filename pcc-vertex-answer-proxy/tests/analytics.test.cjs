@@ -64,47 +64,6 @@ test('storage unavailable, suggested follow-up, event linkage, and help clicks',
   assert.equal(b.requests.length, 3);
 });
 
-function receiver() {
-  const sheets = new Map();
-  function sheet() {
-    return { rows: [], getLastRow() { return this.rows.length; }, appendRow(row) { this.rows.push(row); },
-      setFrozenRows() {}, getRange(row, column, count, width) {
-        const values = this.rows.slice(row-1, row-1+count).map(r => r.slice(column-1,column-1+width));
-        return { getValues: () => values, setFontWeight() {return this;}, setBackground() {return this;},
-          createTextFinder(value) { return {matchEntireCell() {return this;}, useRegularExpression() {return this;},
-            findNext: () => values.some(r => r[0] === value) ? {} : null}; } };
-      } };
-  }
-  const c = { LockService: {getScriptLock: () => ({tryLock: () => true, releaseLock() {}})},
-    PropertiesService: {getScriptProperties: () => ({getProperty: () => 'test-token'})},
-    SpreadsheetApp: {getActiveSpreadsheet: () => ({getSheetByName: n => sheets.get(n), insertSheet: n => {const s=sheet(); sheets.set(n,s); return s;}})},
-    ContentService: {MimeType: {JSON:'json'}, createTextOutput: text => ({setMimeType: () => JSON.parse(text)})} };
-  vm.createContext(c);
-  vm.runInContext(fs.readFileSync(path.join(base, 'scripts/google-sheets-webhook.gs'), 'utf8'), c);
-  return {sheets, send: (body, token='test-token') => c.doPost({parameter: {token}, postData: {contents:JSON.stringify(body)}})};
-}
-
-test('receiver authorizes, deduplicates, preserves flags, neutralizes formulas, omits IP, and separates comments', () => {
-  const r = receiver();
-  const row = {schema_version:2, event_type:'question_answer', query_id:randomUUID(), question:'=IMPORTXML("bad")',
-    is_test:false, bot_suspected:true, ip:'192.0.2.1'};
-  assert.equal(r.send(row, 'wrong').ok, false);
-  assert.equal(r.sheets.size, 0);
-  assert.equal(r.send(row).ok, true);
-  assert.equal(r.send(row).ok, true);
-  const s = r.sheets.get('question_answer_log_v2');
-  assert.equal(s.rows.length, 2);
-  assert.equal(s.rows[1][s.rows[0].indexOf('is_test')], false);
-  assert.ok(s.rows[1][s.rows[0].indexOf('question')].startsWith("'="));
-  assert.ok(!JSON.stringify(s.rows).includes('192.0.2.1'));
-  for (const event_type of ['feedback','feedback_comment','escalation']) {
-    assert.equal(r.send({schema_version:2, event_type, event_id:randomUUID()}).ok, true);
-  }
-  assert.equal(r.sheets.get('interaction_events').rows.length, 4);
-  assert.equal(r.send({question:'legacy', ip:'192.0.2.1'}).ok, true);
-  assert.equal(r.sheets.get('question_answer_log').rows[1][7], '');
-});
-
 for (const file of ['embed.js', 'index.php']) {
   test(`${file}: rating click saves before optional comment and locks both rating buttons`, async () => {
     const source = fs.readFileSync(path.join(base, 'public', file), 'utf8');
@@ -145,3 +104,23 @@ for (const file of ['embed.js', 'index.php']) {
     assert.equal(events[2][2].rating, 'up');
   });
 }
+
+test('logging=0 propagates to answer requests and suppresses events without breaking sessions', async () => {
+  const b = browser();
+  b.context.location.search = '?timings=1&logging=0';
+  const tracker = b.create();
+  const request = tracker.begin(false, 'Test');
+  assert.equal(tracker.loggingEnabled, false);
+  assert.equal(request.payload.logging, '0');
+  tracker.complete(request.payload, 'test-session');
+  assert.equal(tracker.begin().sid, 'test-session');
+  await tracker.event(request.payload, 'feedback', { rating: 'up' });
+  await tracker.event(request.payload, 'escalation');
+  assert.equal(b.requests.length, 0);
+  b.context.location.search = '';
+  const normal = b.create();
+  assert.equal(normal.loggingEnabled, true);
+  assert.equal(normal.begin().payload.logging, '1');
+  await normal.event(request.payload, 'feedback', { rating: 'up' });
+  assert.equal(b.requests.length, 1);
+});

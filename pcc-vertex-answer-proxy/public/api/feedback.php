@@ -5,33 +5,9 @@ require_once __DIR__ . '/tracking.php';
 function json_out(array $data, int $code = 200): void {
   http_response_code($code);
   header('Content-Type: application/json; charset=utf-8');
+  header('Cache-Control: no-store');
   echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
-}
-
-function ensure_dir(string $path): void {
-  if (!is_dir($path)) {
-    mkdir($path, 0775, true);
-  }
-}
-
-function resolve_writable_dir(array $candidates): ?string {
-  foreach ($candidates as $candidate) {
-    $dir = rtrim((string) $candidate, '/');
-    if ($dir === '') {
-      continue;
-    }
-    if (is_dir($dir)) {
-      if (is_writable($dir)) {
-        return $dir;
-      }
-      continue;
-    }
-    if (@mkdir($dir, 0775, true) && is_writable($dir)) {
-      return $dir;
-    }
-  }
-  return null;
 }
 
 function client_ip(): string {
@@ -69,60 +45,7 @@ function origin_allowed(string $origin, array $allowlist): bool {
   return false;
 }
 
-function post_google_sheets_log(array $sheetConfig, array $payload): void {
-  $enabled = ($sheetConfig['enabled'] ?? false) === true;
-  $url = trim((string) ($sheetConfig['webhook_url'] ?? ''));
-  if (!$enabled || $url === '') {
-    return;
-  }
-
-  $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-  if (!is_string($json) || $json === '') {
-    return;
-  }
-
-  $headers = ['Content-Type: application/json'];
-  $token = trim((string) ($sheetConfig['webhook_token'] ?? ''));
-  $postUrl = $url;
-  if ($token !== '' && stripos($url, 'token=') === false) {
-    $postUrl .= (str_contains($url, '?') ? '&' : '?') . 'token=' . rawurlencode($token);
-  }
-  if ($token !== '') {
-    $headers[] = 'X-Webhook-Token: ' . $token;
-  }
-
-  $timeout = max(1, (int) ($sheetConfig['timeout_seconds'] ?? 3));
-
-  $ch = curl_init($postUrl);
-  curl_setopt_array($ch, [
-    CURLOPT_POST => true,
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_MAXREDIRS => 3,
-    CURLOPT_HTTPHEADER => $headers,
-    CURLOPT_POSTFIELDS => $json,
-    CURLOPT_CONNECTTIMEOUT => min(2, $timeout),
-    CURLOPT_TIMEOUT => $timeout,
-  ]);
-  $response = curl_exec($ch);
-  $errNo = curl_errno($ch);
-  $err = curl_error($ch);
-  $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
-
-  $result = is_string($response) ? json_decode($response, true) : null;
-  if ($errNo || $status >= 400 || ($result['ok'] ?? false) !== true) {
-    error_log('Google Sheets analytics delivery failed. HTTP ' . $status . ' curl_errno=' . $errNo);
-  }
-}
-
 $config = require __DIR__ . '/../../config/config.php';
-
-$storageBase = realpath(__DIR__ . '/../../storage') ?: (__DIR__ . '/../../storage');
-$preferredLogDir = $storageBase . '/logs';
-$tmpLogDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . '/pcc-vertex-answer-proxy/logs';
-$resolvedLogDir = resolve_writable_dir([$preferredLogDir, $tmpLogDir]);
-$logDir = $resolvedLogDir ?: $preferredLogDir;
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer-when-downgrade');

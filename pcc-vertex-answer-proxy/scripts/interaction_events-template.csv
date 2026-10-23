@@ -1,0 +1,1 @@
+timestamp,event_id,event_type,session_id,conversation_id,query_id,answer_id,parent_event_id,rating,feedback,escalation_action,destination_url,page_url,is_test,bot_suspected,bot_reason,schema_version,environment

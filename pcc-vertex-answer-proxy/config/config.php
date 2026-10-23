@@ -25,19 +25,6 @@ return [
   // Add your production domains here.
   'cors_allow_origins' => array_filter(array_map('trim', explode(',', env('PCC_CORS_ORIGINS', '')))),
 
-  // Rate limiting (simple token bucket by IP)
-  'rate' => [
-    'enabled' => env('PCC_RATE_ENABLED', '1') === '1',
-    'capacity' => (int) env('PCC_RATE_CAPACITY', '20'),           // burst
-    'refill_per_min' => (int) env('PCC_RATE_REFILL_PER_MIN', '20') // sustained
-  ],
-
-  // Caching (filesystem)
-  'cache' => [
-    'enabled' => env('PCC_CACHE_ENABLED', '1') === '1',
-    'ttl_seconds' => (int) env('PCC_CACHE_TTL_SECONDS', '300'), // 5 minutes
-  ],
-
   // Debug controls
   'debug' => [
     'enabled' => env('PCC_DEBUG', '0') === '1',
@@ -66,18 +53,12 @@ return [
     ],
   ],
 
-  // Optional Google Sheets webhook logging (Apps Script web app URL)
-  'google_sheets_log' => [
-    // File-based defaults are set so this can run even when env vars are unavailable.
-    'enabled' => env('PCC_GSHEETS_LOG_ENABLED', '1') === '1',
-    'webhook_url' => env(
-      'PCC_GSHEETS_WEBHOOK_URL',
-      'https://script.google.com/macros/s/AKfycbyEf1_vcaAvSicX0GW6N56MUbTVqArrD_61TMVqL20zrKeAB0RAHj8P2yu_a23hRYNC1Q/exec'
-    ),
-    'webhook_token' => env(
-      'PCC_GSHEETS_WEBHOOK_TOKEN',
-      '1287c1d1db625ffe6dcbd46aa264db1d93b6b39524b21c9be925a4e707de4ea6'
-    ),
-    'timeout_seconds' => (int) env('PCC_GSHEETS_TIMEOUT_SECONDS', '3'),
+  'firestore_log' => [
+    'enabled' => env('PCC_FIRESTORE_LOG_ENABLED', '1') === '1',
+    'project_id' => env('PCC_FIRESTORE_PROJECT_ID', 'pcc-success-cent-1530898874821'),
+    'database_id' => env('PCC_FIRESTORE_DATABASE_ID', 'pccaisearch'),
+    'environment' => env('PCC_ENVIRONMENT', 'production'),
+    'timeout_seconds' => (int) env('PCC_FIRESTORE_TIMEOUT_SECONDS', '3'),
   ],
+
 ];

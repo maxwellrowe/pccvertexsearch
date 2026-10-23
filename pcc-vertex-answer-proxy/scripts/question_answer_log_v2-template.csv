@@ -1,0 +1,1 @@
+query_timestamp,answer_timestamp,completed_timestamp,session_id,conversation_id,query_id,answer_id,previous_query_id,turn_number,query_kind,rephrase_status,rephrase_reason,retry_of_query_id,question,answer,reference_urls,status,http_status,error,cache,page_url,is_test,bot_suspected,bot_reason,schema_version,event_type,environment

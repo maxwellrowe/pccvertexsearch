@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/firestore.php';
 
 function tracking_id(string $key, bool $generate = true): string {
   $value = (string) ($_POST[$key] ?? '');
@@ -26,24 +27,27 @@ function tracking_page_url(): string {
   return substr($parts['scheme'] . '://' . $parts['host'] . ($parts['path'] ?? '/'), 0, 2048);
 }
 
+function tracking_logging_enabled(): bool {
+  return ($_POST['logging'] ?? '') !== '0';
+}
+
 function tracking_write(array $payload, string $name): bool {
-  global $logDir, $config;
-  $path = $logDir . '/' . $name . '.jsonl';
-  $written = file_put_contents($path, json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) . PHP_EOL, FILE_APPEND | LOCK_EX);
-  if ($written === false) {
-    error_log('Analytics local log write failed: ' . $name);
-    return false;
+  if (!tracking_logging_enabled()) return true;
+  global $config;
+  $ok = true;
+  if (($config['firestore_log']['enabled'] ?? false) === true) {
+    $ok = firestore_tracking_write($payload, $name);
   }
-  post_google_sheets_log($config['google_sheets_log'] ?? [], $payload);
-  return true;
+  return $ok;
 }
 
 function tracking_finish(array &$data, int $code): void {
   global $trackingQuery;
+  $data['meta']['logging'] = tracking_logging_enabled() ? 'enabled' : 'disabled';
   if (!isset($trackingQuery)) return;
   $row = $trackingQuery;
   unset($GLOBALS['trackingQuery']);
-  $row['answer_id'] = $code < 400 ? bin2hex(random_bytes(16)) : '';
+  $row['answer_id'] = $code < 400 ? substr(hash('sha256', 'answer:' . $row['query_id']), 0, 32) : '';
   $row['answer_timestamp'] = $code < 400 ? gmdate('Y-m-d\TH:i:s\Z') : '';
   $row['completed_timestamp'] = gmdate('Y-m-d\TH:i:s\Z');
   $row['status'] = $code < 400 ? 'success' : 'error';
@@ -52,12 +56,11 @@ function tracking_finish(array &$data, int $code): void {
   $row['error'] = (string) ($data['error'] ?? '');
   $row['reference_urls'] = reference_urls_for_log([], $data['references'] ?? [], []);
   $row['cache'] = $data['meta']['cache'] ?? '';
-  // A cached answer must never resume the original requester's Vertex session.
-  if ($row['cache'] === 'HIT') $data['meta']['session'] = (string) ($_POST['sid'] ?? '');
   $data['meta']['tracking'] = array_intersect_key($row, array_flip([
     'session_id', 'conversation_id', 'query_id', 'answer_id', 'is_test', 'bot_suspected',
   ]));
   // Form encoding uses 1/0 for boolean flags.
   $data['meta']['tracking']['is_test'] = $row['is_test'] ? '1' : '0';
-  tracking_write($row, 'question_answer_log_v2');
+  $saved = tracking_write($row, 'question_answer_log_v2');
+  $data['meta']['logging_delivery'] = tracking_logging_enabled() ? ($saved ? 'completed' : 'failed') : 'skipped';
 }

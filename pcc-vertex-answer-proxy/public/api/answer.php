@@ -2,42 +2,43 @@
 // public/api/answer.php
 
 declare(strict_types=1);
+require_once __DIR__ . '/google-auth.php';
+$timingStart = hrtime(true);
+$timingLast = $timingStart;
+$timingStages = [];
+$vertexTimings = null;
+$timingEnabled = ($_POST['debug_timings'] ?? '') === '1';
+function timing_mark(string $name): void {
+  global $timingLast, $timingStages;
+  $now = hrtime(true);
+  $timingStages[$name] = round(($now - $timingLast) / 1e6, 2);
+  $timingLast = $now;
+}
 require_once __DIR__ . '/tracking.php';
+require_once __DIR__ . '/request-timings.php';
 
 // -----------------------------
 // Helpers
 // -----------------------------
 function json_out(array $data, int $code = 200): void {
+  global $timingStart, $timingStages, $timingEnabled, $vertexTimings;
+  timing_mark('remaining_processing');
   tracking_finish($data, $code);
+  timing_mark('analytics_logging');
+  // Timings describe only this request.
+  unset($data['meta']['timings']);
+  if ($timingEnabled) {
+    $data['meta']['timings'] = [
+      'stages_ms' => $timingStages,
+      'vertex_transfer' => $vertexTimings,
+      'server_total_ms' => round((hrtime(true) - $timingStart) / 1e6, 2),
+    ];
+  }
   http_response_code($code);
   header('Content-Type: application/json; charset=utf-8');
+  header('Cache-Control: no-store');
   echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
-}
-
-function ensure_dir(string $path): void {
-  if (!is_dir($path)) {
-    mkdir($path, 0775, true);
-  }
-}
-
-function resolve_writable_dir(array $candidates): ?string {
-  foreach ($candidates as $candidate) {
-    $dir = rtrim((string) $candidate, '/');
-    if ($dir === '') {
-      continue;
-    }
-    if (is_dir($dir)) {
-      if (is_writable($dir)) {
-        return $dir;
-      }
-      continue;
-    }
-    if (@mkdir($dir, 0775, true) && is_writable($dir)) {
-      return $dir;
-    }
-  }
-  return null;
 }
 
 function client_ip(): string {
@@ -86,22 +87,6 @@ function origin_allowed(string $origin, array $allowlist): bool {
     }
   }
   return false;
-}
-
-function read_json_file(string $path): ?array {
-  if (!is_readable($path)) {
-    return null;
-  }
-  $raw = file_get_contents($path);
-  if ($raw === false) {
-    return null;
-  }
-  $data = json_decode($raw, true);
-  return is_array($data) ? $data : null;
-}
-
-function write_json_file(string $path, array $data): void {
-  file_put_contents($path, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 
 function reference_urls_for_log(array $citations, array $references, array $searchResults): string {
@@ -435,192 +420,6 @@ function repair_approved_routing_ctas(string $text): string {
   return $text;
 }
 
-function post_google_sheets_log(array $sheetConfig, array $payload): void {
-  $enabled = ($sheetConfig['enabled'] ?? false) === true;
-  $url = trim((string) ($sheetConfig['webhook_url'] ?? ''));
-  if (!$enabled || $url === '') {
-    return;
-  }
-
-  $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-  if (!is_string($json) || $json === '') {
-    return;
-  }
-
-  $headers = ['Content-Type: application/json'];
-  $token = trim((string) ($sheetConfig['webhook_token'] ?? ''));
-  $postUrl = $url;
-  if ($token !== '' && stripos($url, 'token=') === false) {
-    $postUrl .= (str_contains($url, '?') ? '&' : '?') . 'token=' . rawurlencode($token);
-  }
-  if ($token !== '') {
-    $headers[] = 'X-Webhook-Token: ' . $token;
-  }
-
-  $timeout = max(1, (int) ($sheetConfig['timeout_seconds'] ?? 3));
-
-  $ch = curl_init($postUrl);
-  curl_setopt_array($ch, [
-    CURLOPT_POST => true,
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_MAXREDIRS => 3,
-    CURLOPT_HTTPHEADER => $headers,
-    CURLOPT_POSTFIELDS => $json,
-    CURLOPT_CONNECTTIMEOUT => min(2, $timeout),
-    CURLOPT_TIMEOUT => $timeout,
-  ]);
-  $response = curl_exec($ch);
-  $errNo = curl_errno($ch);
-  $err = curl_error($ch);
-  $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
-
-  $result = is_string($response) ? json_decode($response, true) : null;
-  if ($errNo || $status >= 400 || ($result['ok'] ?? false) !== true) {
-    error_log('Google Sheets analytics delivery failed. HTTP ' . $status . ' curl_errno=' . $errNo);
-  }
-}
-
-function b64url_encode(string $data): string {
-  return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
-}
-
-function json_encode_safe(array $value): string {
-  $json = json_encode($value, JSON_UNESCAPED_SLASHES);
-  if (!is_string($json)) {
-    throw new RuntimeException('Failed to encode JSON payload.');
-  }
-  return $json;
-}
-
-function load_service_account(string $path): array {
-  $raw = file_get_contents($path);
-  if ($raw === false) {
-    throw new RuntimeException('Failed to read service account file.');
-  }
-  $json = json_decode($raw, true);
-  if (!is_array($json)) {
-    throw new RuntimeException('Invalid service account JSON.');
-  }
-
-  $email = (string) ($json['client_email'] ?? '');
-  $privateKey = (string) ($json['private_key'] ?? '');
-  $tokenUri = (string) ($json['token_uri'] ?? 'https://oauth2.googleapis.com/token');
-  if ($email === '' || $privateKey === '') {
-    throw new RuntimeException('Service account JSON missing client_email or private_key.');
-  }
-
-  return [
-    'client_email' => $email,
-    'private_key' => $privateKey,
-    'token_uri' => $tokenUri,
-  ];
-}
-
-function fetch_service_account_access_token(array $serviceAccount, string $scope, string $cachePath): string {
-  $cached = read_json_file($cachePath);
-  $now = time();
-  if (
-    is_array($cached)
-    && !empty($cached['access_token'])
-    && isset($cached['expires_at'])
-    && ((int) $cached['expires_at'] > ($now + 60))
-  ) {
-    return (string) $cached['access_token'];
-  }
-
-  $tokenUri = (string) ($serviceAccount['token_uri'] ?? 'https://oauth2.googleapis.com/token');
-  $claims = [
-    'iss' => $serviceAccount['client_email'],
-    'sub' => $serviceAccount['client_email'],
-    'scope' => $scope,
-    'aud' => $tokenUri,
-    'iat' => $now,
-    'exp' => $now + 3600,
-  ];
-
-  $header = ['alg' => 'RS256', 'typ' => 'JWT'];
-  $segments = [
-    b64url_encode(json_encode_safe($header)),
-    b64url_encode(json_encode_safe($claims)),
-  ];
-  $signingInput = implode('.', $segments);
-  $signature = '';
-  $ok = openssl_sign($signingInput, $signature, $serviceAccount['private_key'], OPENSSL_ALGO_SHA256);
-  if (!$ok) {
-    throw new RuntimeException('Failed to sign JWT. Check OpenSSL and private key format.');
-  }
-  $jwt = $signingInput . '.' . b64url_encode($signature);
-
-  $postBody = http_build_query([
-    'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-    'assertion' => $jwt,
-  ]);
-
-  $ch = curl_init($tokenUri);
-  curl_setopt_array($ch, [
-    CURLOPT_POST => true,
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
-    CURLOPT_POSTFIELDS => $postBody,
-    CURLOPT_TIMEOUT => 20,
-  ]);
-  $resp = curl_exec($ch);
-  $errNo = curl_errno($ch);
-  $err = curl_error($ch);
-  $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
-
-  if ($errNo) {
-    throw new RuntimeException('OAuth token request failed: ' . $err);
-  }
-  $data = json_decode((string) $resp, true);
-  if (!is_array($data) || $status >= 400) {
-    throw new RuntimeException('OAuth token request error: HTTP ' . $status . ' ' . (string) $resp);
-  }
-
-  $accessToken = (string) ($data['access_token'] ?? '');
-  $expiresIn = (int) ($data['expires_in'] ?? 3600);
-  if ($accessToken === '') {
-    throw new RuntimeException('OAuth token response missing access_token.');
-  }
-
-  write_json_file($cachePath, [
-    'access_token' => $accessToken,
-    'expires_at' => $now + max(60, $expiresIn - 60),
-  ]);
-
-  return $accessToken;
-}
-
-// Token bucket: state saved per IP
-function rate_limit(string $key, int $capacity, int $refillPerMin, string $dir): bool {
-  ensure_dir($dir);
-  $path = $dir . '/' . hash('sha256', $key) . '.json';
-  $now = microtime(true);
-
-  $state = read_json_file($path) ?? [
-    'tokens' => $capacity,
-    'ts' => $now
-  ];
-
-  $tokens = (float) ($state['tokens'] ?? $capacity);
-  $ts = (float) ($state['ts'] ?? $now);
-
-  $elapsed = max(0.0, $now - $ts);
-  $refillPerSec = $refillPerMin / 60.0;
-  $tokens = min($capacity, $tokens + ($elapsed * $refillPerSec));
-
-  $allowed = $tokens >= 1.0;
-  if ($allowed) {
-    $tokens -= 1.0;
-  }
-
-  write_json_file($path, ['tokens' => $tokens, 'ts' => $now]);
-  return $allowed;
-}
-
 // Conservative date/tense cleanup (optional safety net):
 // If model returns "will be available ... October 13, 2025" and that date is in the past,
 // rewrite common patterns. (We keep it intentionally narrow.)
@@ -898,26 +697,10 @@ function search_results_from_references(array $references): array {
 }
 
 // -----------------------------
-// Load config + setup storage
+// Load configuration
 // -----------------------------
 $config = require __DIR__ . '/../../config/config.php';
 
-$storageBase = realpath(__DIR__ . '/../../storage') ?: (__DIR__ . '/../../storage');
-$cacheDir = $storageBase . '/cache';
-$rateDir = $storageBase . '/rate';
-$preferredLogDir = $storageBase . '/logs';
-$tmpLogDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . '/pcc-vertex-answer-proxy/logs';
-$resolvedLogDir = resolve_writable_dir([$preferredLogDir, $tmpLogDir]);
-$logDir = $resolvedLogDir ?: $preferredLogDir;
-ensure_dir($cacheDir);
-ensure_dir($rateDir);
-if (!$resolvedLogDir) {
-  error_log('No writable log directory found. Tried: ' . $preferredLogDir . ' | ' . $tmpLogDir);
-}
-
-// -----------------------------
-// Security headers
-// -----------------------------
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer-when-downgrade');
 header('X-Frame-Options: SAMEORIGIN');
@@ -950,7 +733,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 }
 
 // -----------------------------
-// Rate limiting
+// Request tracking context
 // -----------------------------
 $trackingQuery = tracking_context() + [
   'event_type' => 'question_answer',
@@ -963,17 +746,6 @@ $trackingQuery = tracking_context() + [
   'rephrase_reason' => ($_POST['rephrase_status'] ?? '') === 'suspected' ? 'token_overlap_at_least_0.6' : '',
   'retry_of_query_id' => tracking_id('retry_of_query_id', false),
 ];
-$ip = client_ip();
-$pageUrl = tracking_page_url();
-if (($config['rate']['enabled'] ?? true) === true) {
-  $cap = (int) ($config['rate']['capacity'] ?? 20);
-  $ref = (int) ($config['rate']['refill_per_min'] ?? 20);
-  $key = 'ip:' . $ip;
-  if (!rate_limit($key, $cap, $ref, $rateDir)) {
-    json_out(['error' => 'Rate limit exceeded. Please try again shortly.'], 429);
-  }
-}
-
 // -----------------------------
 // Input
 // -----------------------------
@@ -994,46 +766,9 @@ if ($sidRaw === '') {
   $sidRaw = '-';
 }
 
-// -----------------------------
-// Cache (query + engine identity)
-// -----------------------------
-$cacheEnabled = ($config['cache']['enabled'] ?? true) === true;
-$cacheTtl = (int) ($config['cache']['ttl_seconds'] ?? 300);
-$promptVersion = '2026-06-18-approved-routing-urls-v2';
+timing_mark('setup_validation');
+$searchMaxResults = 20;
 
-$cacheKeyMaterial = json_encode([
-  'q' => $q,
-  'sid' => $sidRaw,
-  'project_id' => $config['project_id'],
-  'location' => $config['location'],
-  'engine_id' => $config['engine_id'],
-  'prompt_version' => $promptVersion,
-], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
-$cacheKey = hash('sha256', $cacheKeyMaterial ?: $q);
-$cachePath = $cacheDir . '/' . $cacheKey . '.json';
-
-if ($cacheEnabled && is_readable($cachePath)) {
-  $cached = read_json_file($cachePath);
-  if ($cached && isset($cached['ts']) && (time() - (int) $cached['ts'] <= $cacheTtl)) {
-    $logTimestamp = date('c');
-    $cachedAnswer = repair_approved_routing_ctas((string) ($cached['answer'] ?? ''));
-    $cachedAnswer = linkify_answer_text(
-      $cachedAnswer,
-      is_array($cached['citations'] ?? null) ? $cached['citations'] : [],
-      is_array($cached['references'] ?? null) ? $cached['references'] : [],
-      is_array($cached['search_results'] ?? null) ? $cached['search_results'] : []
-    );
-    $cachedAnswer = append_help_centers_cta($cachedAnswer);
-    $cached['answer'] = $cachedAnswer;
-    $cached['meta']['cache'] = 'HIT';
-    json_out($cached, 200);
-  }
-}
-
-// -----------------------------
-// Build serving config + endpoint
-// -----------------------------
 $projectId = $config['project_id'];
 $location = $config['location'];
 $engineId = $config['engine_id'];
@@ -1239,6 +974,9 @@ $preamble = str_replace('{CURRENT_DATE}', $today, $preambleTemplate);
 
 $body = [
   'query' => ['text' => $q],
+  'searchSpec' => [
+    'searchParams' => ['maxReturnResults' => $searchMaxResults],
+  ],
   'session' => $session,
   'answerGenerationSpec' => [
     'promptSpec' => ['preamble' => $preamble],
@@ -1254,6 +992,7 @@ $body = [
 // -----------------------------
 // Auth (service account)
 // -----------------------------
+timing_mark('request_preparation');
 $saPath = (string) ($config['service_account_json'] ?? '');
 if (!$saPath || !is_readable($saPath)) {
   json_out(['error' => 'Service account JSON not found or not readable.'], 500);
@@ -1261,11 +1000,9 @@ if (!$saPath || !is_readable($saPath)) {
 
 try {
   $serviceAccount = load_service_account($saPath);
-  $tokenCachePath = $cacheDir . '/google_oauth_token.json';
   $accessToken = fetch_service_account_access_token(
     $serviceAccount,
-    'https://www.googleapis.com/auth/cloud-platform',
-    $tokenCachePath
+    'https://www.googleapis.com/auth/cloud-platform'
   );
 } catch (Throwable $e) {
   json_out(['error' => 'Auth error', 'message' => $e->getMessage()], 500);
@@ -1274,6 +1011,7 @@ try {
 // -----------------------------
 // Call API
 // -----------------------------
+timing_mark('authentication');
 $start = microtime(true);
 
 $ch = curl_init($url);
@@ -1292,8 +1030,16 @@ $response = curl_exec($ch);
 $curlErrNo = curl_errno($ch);
 $curlErr = curl_error($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+if ($timingEnabled) {
+  $vertexTimings = vertex_transfer_timings(
+    curl_getinfo($ch),
+    (float) curl_getinfo($ch, CURLINFO_APPCONNECT_TIME),
+    $curlErrNo
+  );
+}
 curl_close($ch);
 
+timing_mark('vertex_answer_request');
 $elapsedMs = (int) round((microtime(true) - $start) * 1000);
 
 if ($curlErrNo) {
@@ -1343,7 +1089,7 @@ $answerText = linkify_answer_text($answerText, $citations, $references, $searchR
 $answerText = append_help_centers_cta($answerText);
 
 // -----------------------------
-// Output + cache store
+// Output
 // -----------------------------
 $out = [
   'answer' => $answerText,
@@ -1353,7 +1099,7 @@ $out = [
   'search_results' => $searchResults,
   'meta' => [
     'elapsed_ms' => $elapsedMs,
-    'cache' => 'MISS',
+    'cache' => 'DISABLED',
     'session' => $sessionOut ?: $session,
   ],
 ];
@@ -1362,10 +1108,5 @@ if (($config['debug']['enabled'] ?? false) && ($config['debug']['return_raw'] ??
   $out['raw'] = $data;
 }
 
-if ($cacheEnabled) {
-  $toCache = $out;
-  $toCache['ts'] = time();
-  write_json_file($cachePath, $toCache);
-}
-
+timing_mark('answer_processing');
 json_out($out, 200);

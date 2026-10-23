@@ -2,20 +2,10 @@
 
 ## Deploy
 
-1. In the existing spreadsheet, open **Extensions → Apps Script**. Replace the receiver code with [`scripts/google-sheets-webhook.gs`](../scripts/google-sheets-webhook.gs).
-2. Under **Project Settings → Script properties**, add `WEBHOOK_TOKEN` with the same token already configured in the PHP proxy. The token belongs in settings, not the script source.
-3. Update the existing web app deployment to a **new version**, retaining its current execution/access settings and `/exec` URL. Saving code alone does not update a versioned deployment. Deploy the receiver first; it also accepts the old proxy's payloads during rollout, leaving the legacy IP column blank.
-4. Upload these files together, preserving their relative locations:
-   - `public/analytics.js` (new)
-   - `public/embed.js`
-   - `public/index.php`
-   - `public/api/tracking.php` (new)
-   - `public/api/answer.php`
-   - `public/api/feedback.php`
-5. Invalidate cached copies of `embed.js`, or set a new `$pccWidgetVersion` in the widget include. Keep the existing PHP configuration and webhook URL/token.
-6. Visit a chat page with `?pcc_test=1`. Ask a question, click thumbs-down without entering a comment, submit an optional comment, and click **Visit Help Centers & Support**. Ask a second question and give it thumbs-up. Confirm the records in both new tabs. The first delivery creates each tab automatically.
-
-The existing `question_answer_log` and `feedback` tabs remain intact. Historical IDs and events cannot be reconstructed. The new logs do not backfill old rows.
+Follow [Firestore setup](firestore-setup.md) and deploy the listed PHP, configuration,
+and frontend files together. Refresh cached JavaScript. Verify a test question,
+rating, optional comment and help-link click in the Firestore collections.
+Google Sheets delivery and the Apps Script receiver have been removed.
 
 ## Reading the data
 
@@ -37,13 +27,14 @@ Count **only `event_type=feedback`** for rating totals. `rating` is `up` or `dow
 
 ## Logging and delivery
 
-New records omit raw IP addresses. Page URLs omit query strings and fragments. IP addresses are still used by the existing rate limiter; historical files and ordinary hosting access logs are unaffected. Questions, answers, and optional comments remain verbatim content and may contain information supplied by users.
+New records omit raw IP addresses. Page URLs omit query strings and fragments. The file-backed rate limiter has been removed; historical files and ordinary hosting access logs are unaffected. Questions, answers, and optional comments remain verbatim content and may contain information supplied by users.
 
-The proxy writes IP-free local backups to `storage/logs/question_answer_log_v2.jsonl` and `storage/logs/interaction_events.jsonl` before attempting Sheets delivery. It no longer appends normal query/feedback traffic to the old CSV files or `requests.log`. Monitor the new JSONL files instead. Keep the existing storage directory inaccessible from the web.
-
-The receiver serializes writes and deduplicates by query/event ID. Re-delivering the same JSONL record will not create another sheet row. Local backups can contain duplicate delivery attempts; deduplicate them by the same IDs if analyzing those files directly. Sheets failures are reported to the PHP error log without logging the secret or response body. Delivery is best effort: there is no automatic replay worker. Saved JSONL records can be reposted to the webhook if delivery fails.
-
-The proxy follows the redirect used by [Google Apps Script Content Service](https://developers.google.com/apps-script/guides/content) and checks the JSON `ok` field, since receiver errors can arrive with HTTP 200.
+The proxy delivers directly to Firestore when enabled. It does not create
+local logs, backups, or temporary fallback files. `logging=0` skips delivery.
+The receiver serializes writes and deduplicates by query/event ID. Delivery is
+best effort: there is no durable retry queue or automatic replay worker. Firestore
+failures are reported to the hosting-managed PHP error log without recording
+secrets or response bodies.
 
 ## Verification
 
@@ -54,4 +45,4 @@ node --test pcc-vertex-answer-proxy/tests/analytics.test.cjs
 python3 pcc-vertex-answer-proxy/tests/tracking_integration.py
 ```
 
-These tests use browser/Sheets mocks and an isolated PHP configuration with network logging disabled. They cover expiry, storage fallback, linkage, events, receiver deduplication, formula-as-text handling, cache hits, validation errors, timestamps, and IP omission. A live Apps Script/production smoke test is still required after deployment.
+These tests use browser/Firestore mocks and an isolated PHP configuration with mocked HTTP and filesystem write functions forbidden. They cover browser session expiry, linkage, events, create-only deduplication, repeated uncached queries, fresh OAuth exchanges, validation errors, and IP omission. A live production smoke test is still required after deployment.
