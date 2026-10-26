@@ -547,7 +547,7 @@ function renderSearchResults(results) {
       ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${urlLine}${snippet}`
       : `<span>${escapeHtml(title)}</span>${snippet}`;
     if (r.promoted) {
-        item.className = "list-group-item bg-light p-2 rounded mb-1 border-0";
+        item.className = "list-group-item bg-warning-subtle p-2 rounded mb-1 border-0";
       }
     list.appendChild(item);
   });

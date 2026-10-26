@@ -669,7 +669,7 @@
         ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${urlLine}${descriptionLine}`
         : `${escapeHtml(title)}${descriptionLine}`;
       if (r.promoted) {
-        li.className = "list-group-item bg-light p-2 rounded mb-1 border-0";
+        li.className = "list-group-item bg-warning-subtle p-2 rounded mb-1 border-0";
       }
       el.search.appendChild(li);
     });
