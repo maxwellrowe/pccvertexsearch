@@ -664,10 +664,13 @@
       const uri = r?.uri || "";
       const description = r?.description || r?.snippet || "";
       const urlLine = uri ? `<div class="small text-dark">${escapeHtml(uri)}${window.PccSearchUI.externalResultIcon(uri)}</div>` : "";
-      const descriptionLine = description ? `<div class="text-muted mt-1">${escapeHtml(description)}</div>` : "";
+      const descriptionLine = description ? `<div class="${r.promoted ? "text-dark fs-9" : "text-muted mt-1"}">${escapeHtml(description)}</div>` : "";
       li.innerHTML = uri
         ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${urlLine}${descriptionLine}`
         : `${escapeHtml(title)}${descriptionLine}`;
+      if (r.promoted) {
+        li.className = "list-group-item bg-light p-2 rounded mb-1 border-0";
+      }
       el.search.appendChild(li);
     });
 
@@ -753,7 +756,7 @@
       renderCitations(data.citations || []);
       renderReferences(data.references || []);
       renderAnswerAnchors(data.citations || []);
-      renderSearch(data.search_results || []);
+      renderSearch([...(data.promoted_results || []), ...(data.search_results || [])]);
       renderFollowUps(data.related_questions || []);
       if (tracker.loggingEnabled) el.feedbackWrap.classList.remove("d-none");
 

@@ -542,10 +542,13 @@ function renderSearchResults(results) {
     const uri = r?.uri || "";
     const description = r?.description || r?.snippet || "";
     const urlLine = uri ? `<div class="small text-dark">${escapeHtml(uri)}${window.PccSearchUI.externalResultIcon(uri)}</div>` : "";
-    const snippet = description ? `<div class="text-muted mt-1">${escapeHtml(description)}</div>` : "";
+    const snippet = description ? `<div class="${r.promoted ? "text-dark fs-9" : "text-muted mt-1"}">${escapeHtml(description)}</div>` : "";
     item.innerHTML = uri
       ? `<a href="${escapeHtml(uri)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${urlLine}${snippet}`
       : `<span>${escapeHtml(title)}</span>${snippet}`;
+    if (r.promoted) {
+        item.className = "list-group-item bg-light p-2 rounded mb-1 border-0";
+      }
     list.appendChild(item);
   });
 
@@ -688,7 +691,7 @@ async function ask(prefillQuestion = null) {
     renderCitations(data.citations || []);
     renderReferences(data.references || []);
     renderAnswerCitations(data.citations || []);
-    renderSearchResults(data.search_results || []);
+    renderSearchResults([...(data.promoted_results || []), ...(data.search_results || [])]);
     renderFollowUps(data.related_questions || []);
     if (Array.isArray(data.search_results) && data.search_results.length > 0) {
       $("#metaLink").classList.remove("d-none");

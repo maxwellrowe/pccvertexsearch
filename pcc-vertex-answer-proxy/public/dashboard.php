@@ -16,7 +16,7 @@ $pccEscape = static fn($v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUB
     <div><p class="small text-primary fw-bold text-uppercase mb-1">PCC Search Insights</p>
     <h2 class="h3 mb-1">Reporting &amp; feedback</h2>
     <p class="text-muted mb-0">See what people ask, how search responds, and where it can improve.</p></div>
-    <span class="badge bg-light text-dark border rounded-pill px-3 py-2">Firestore reporting</span>
+    <a class="btn btn-outline-primary btn-sm" href="<?= $pccEscape($pccPromotionsUrl ?? '/strategic-communications-and-marketing/ai-search-promotions.php') ?>">Manage promoted searches</a>
   </div>
   <div class="card border rounded-3 mb-4">
     <div class="card-body p-3 p-lg-4">

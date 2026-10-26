@@ -34,6 +34,13 @@ function curl_init($url) { return (object)['url'=>$url,'options'=>[]]; }
 function curl_setopt_array($ch,$options) { $ch->options=$options; return true; }
 function curl_exec($ch) {
   $GLOBALS['calls'][]=$ch->url;
+  if (str_contains($ch->url,'/documents/promoted_searches')) {
+    return json_encode(['documents'=>[['name'=>'projects/test/databases/pccaisearch/documents/promoted_searches/test', 'fields'=>[
+      'title'=>['stringValue'=>'Featured admissions'], 'url'=>['stringValue'=>'https://pasadena.edu/admissions/'],
+      'description'=>['stringValue'=>'Apply here'], 'keywords'=>['arrayValue'=>['values'=>[['stringValue'=>'enroll']]]],
+      'match_type'=>['stringValue'=>'contains'], 'priority'=>['integerValue'=>'0'], 'enabled'=>['booleanValue'=>true]
+    ]]]]);
+  }
   if (str_contains($ch->url,'firestore.googleapis.com')) {
     $GLOBALS['firestore'][]=['url'=>$ch->url,'body'=>json_decode($ch->options[CURLOPT_POSTFIELDS],true)];
     $status=(int) ($_POST['_test_firestore_status']??200);
@@ -43,7 +50,7 @@ function curl_exec($ch) {
   $GLOBALS['vertex_body']=json_decode($ch->options[CURLOPT_POSTFIELDS],true);
   if (str_contains($ch->url,':recrawlUris')) return '{"name":"operations/test","done":false}';
   return json_encode(['answer'=>['answerText'=>'Visit admissions.', 'references'=>[
-    ['unstructuredDocumentInfo'=>['title'=>'Admissions','uri'=>'https://pasadena.edu/admissions/']]]],
+    ['title'=>'Admissions','uri'=>'https://pasadena.edu/admissions/']]],
     'session'=>'projects/test/session']);
 }
 function curl_getinfo($ch,$option=null) {
@@ -78,6 +85,9 @@ include __DIR__.'/public/api/'.$argv[1].'.php';
         answer, trace = request('answer',dict(context,q='How do I enroll?',debug_timings='1'))
         answers.append(answer)
         assert answer['meta']['cache']=='DISABLED'
+        assert answer['promoted_results'][0]['title']=='Featured admissions'
+        assert not answer['search_results']  # duplicate URI removed only from organic results
+        assert answer['references']  # grounding preserved
         assert answer['meta']['logging_delivery']=='completed'
         stored=trace['firestore'][0]
         assert '/databases/pccaisearch/documents/question_answer_log_v2?' in stored['url']
@@ -109,6 +119,7 @@ include __DIR__.'/public/api/'.$argv[1].'.php';
         assert bool(result.get('ok')) == (status==409)
     result,trace=request('answer',dict(context,q='Test',_test_firestore_status=403))
     assert result.get('answer') and result['meta']['logging_delivery']=='failed'
+    assert result['promoted_results']==[]
     result,trace=request('recrawl',{})
     assert result['error']=='Unauthorized.' and not trace['calls']
     result,trace=request('recrawl',{'job':'daily','_test_secret':'test-secret'})

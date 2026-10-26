@@ -3,6 +3,7 @@
 
 declare(strict_types=1);
 require_once __DIR__ . '/google-auth.php';
+require_once __DIR__ . '/promotions.php';
 $timingStart = hrtime(true);
 $timingLast = $timingStart;
 $timingStages = [];
@@ -1109,4 +1110,8 @@ if (($config['debug']['enabled'] ?? false) && ($config['debug']['return_raw'] ??
 }
 
 timing_mark('answer_processing');
+$out['promoted_results'] = promotion_public($config, $accessToken, $q);
+$promotedUrls = array_map(static fn($r) => promotion_url_key($r['uri']), $out['promoted_results']);
+$out['search_results'] = array_values(array_filter($out['search_results'], static fn($r) => !in_array(promotion_url_key($r['uri'] ?? ''), $promotedUrls, true)));
+timing_mark('promotions');
 json_out($out, 200);

@@ -6,6 +6,7 @@ if (!in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true)) {
 }
 header('Cache-Control: private, no-store');
 $pccDashboardAuthorized = true;
+$pccPromotionsUrl = './promotions-test.php';
 $pccDashboardBase = '.';
 ob_start();
 include __DIR__ . '/dashboard.php';
