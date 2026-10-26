@@ -149,7 +149,7 @@ if ($documentRoot !== '') {
         <div class="card shadow-sm mb-3">
           <div class="card-body d-flex flex-wrap gap-2 align-items-center">
             <span class="pcc-launch-icon-wrap" aria-hidden="true">
-              <img class="pcc-launch-icon" src="/images/lance-profile.png" alt="" />
+              <img class="pcc-launch-icon" src="./images/lance-profile.png" alt="" />
             </span>
             <button id="openAskModalBtn" class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#askModal">Ask a Question</button>
             <button id="newChatBtn" class="btn btn-outline-secondary" type="button">New chat</button>
@@ -167,7 +167,7 @@ if ($documentRoot !== '') {
       <div class="modal-header border-0 pb-0 justify-content-end">
         <h2 class="visually-hidden" id="askModalLabel">
           <span class="pcc-modal-title-icon-wrap" aria-hidden="true">
-            <img class="pcc-modal-title-icon" src="/images/lance-profile.png" alt="" />
+            <img class="pcc-modal-title-icon" src="./images/lance-profile.png" alt="" />
           </span>
           <span>Ask Lance O'Lot a Question</span>
         </h2>
@@ -177,7 +177,7 @@ if ($documentRoot !== '') {
         <div id="askControls" class="d-flex gap-2 align-items-end">
           <div id="qWrap" class="flex-grow-1">
             <div class="d-flex align-items-center gap-2 mb-1">
-                  <img src="/images/lance-profile.png" alt="" aria-hidden="true" class="rounded-circle flex-shrink-0" style="height:2rem;width:auto" />
+                  <img src="./images/lance-profile.png" alt="" aria-hidden="true" class="rounded-circle flex-shrink-0" style="height:2rem;width:auto" />
                   <label id="qLabel" class="form-label h5 m-0" for="q">Ask a Question or Search</label>
                 </div>
                 <input id="q" class="form-control" type="search" maxlength="500" placeholder="Search programs, services, and more" />

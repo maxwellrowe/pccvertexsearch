@@ -152,7 +152,7 @@
   root.innerHTML = `
     <div class="position-fixed bottom-0 end-0 m-4 d-inline-flex align-items-center gap-2">
       <span class="pccw-launch-icon-wrap" aria-hidden="true">
-        <img class="pccw-launch-icon" src="/images/lance-profile.png" alt="" />
+        <img class="pccw-launch-icon" src="${new URL('images/lance-profile.png', script.src).href}" alt="" />
       </span>
       <button id="pccw-launch" type="button" class="btn btn-primary shadow" data-bs-toggle="modal" data-bs-target="#${MODAL_ID}">Ask a Question</button>
     </div>
@@ -163,7 +163,7 @@
           <div class="modal-header border-0 pb-0 justify-content-end">
             <h2 class="visually-hidden" id="${MODAL_ID}Label">
               <span class="pccw-modal-title-icon-wrap" aria-hidden="true">
-                <img class="pccw-modal-title-icon" src="/images/lance-profile.png" alt="" />
+                <img class="pccw-modal-title-icon" src="${new URL('images/lance-profile.png', script.src).href}" alt="" />
               </span>
               <span>Ask Lance O'Lot a Question</span>
             </h2>
@@ -173,7 +173,7 @@
             <div id="pccw-ask-controls" class="d-flex gap-2 align-items-end">
               <div id="pccw-q-wrap" class="flex-grow-1">
                 <div class="d-flex align-items-center gap-2 mb-1">
-                  <img src="/images/lance-profile.png" alt="" aria-hidden="true" class="rounded-circle flex-shrink-0" style="height:2rem;width:auto" />
+                  <img src="${new URL('images/lance-profile.png', script.src).href}" alt="" aria-hidden="true" class="rounded-circle flex-shrink-0" style="height:2rem;width:auto" />
                   <label id="pccw-q-label" class="form-label h5 m-0" for="pccw-q">Ask a Question or Search</label>
                 </div>
                 <input id="pccw-q" class="form-control" type="search" maxlength="500" placeholder="Search programs, services, and more" />
