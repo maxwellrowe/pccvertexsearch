@@ -194,7 +194,7 @@
                   <div id="pccw-answer">
                     <div id="pccw-answer-body"></div>
                     <div id="pccw-answer-feedback" class="pccw-feedback-actions">
-                      <div id="pccw-feedback-wrap" class="pccw-feedback-panel card bg-light border-1 p-2 d-none">
+                      <div id="pccw-feedback-wrap" class="pccw-feedback-panel card bg-light border-1 p-2 mb-2 d-none">
                         <div class="pccw-feedback-header">
                           <div class="pccw-feedback-prompt">Was this answer helpful?</div>
                           <div class="pccw-feedback-controls gap-2">

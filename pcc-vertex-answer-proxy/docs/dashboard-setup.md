@@ -32,3 +32,7 @@ Before publishing, verify signed-out requests to the host page reveal no report 
 Open `http://127.0.0.1:8080/dashboard-test.php` with the local PHP server running. This page reads live Firestore data using the existing configured credentials and requires no SSO. It accepts loopback requests only and supports the date and traffic filters. The live-site embed continues to rely on the host page for authorization.
 
 CSV export buttons work with the existing DataTables API and need no additional extension. They export all matching rows in the loaded batch across table pages, with the original stored fields and full answer text. Table search affects export, but does not change summary cards. CSV fields escape quotes and protect against spreadsheet formula evaluation. Large reporting periods require separate batch exports; whole-period aggregation and a single all-batches export are not included.
+
+## AJAX updates
+
+The updated dashboard uses `management-ui.js`, `api/management-access.php`, `api/management-fragment.php`, and `api/promotions.php` for signed, one-hour access to in-place report updates. Deploy these with `dashboard.php`, `dashboard.js`, and `reports/dashboard-data.php`. Filters and next/previous batches no longer reload the protected page or change its query string. The endpoint requires a signed report capability issued by the authorized page; it is not an unauthenticated reporting endpoint. See `promotions-setup.md` for token and host-login deployment details.

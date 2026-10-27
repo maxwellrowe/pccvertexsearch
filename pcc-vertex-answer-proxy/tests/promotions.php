@@ -21,6 +21,13 @@ verify(invalid(array_replace($r,['match_type'=>'regex','keywords'=>['[']])), 'In
 verify(count(promotion_matches([array_replace($r,['match_type'=>'regex','keywords'=>['^records$']])], 'RECORDS'))===1, 'Safe regex');
 verify(promotion_url_key('https://PASADENA.edu/records/#x')===promotion_url_key('https://pasadena.edu/records'), 'URL canonicalization');
 verify(invalid(array_replace($r,['end_date'=>'2026-02-30T00:00'])), 'Invalid calendar date');
+$token = promotion_form_token('admin:/manager', 'test-secret', 1800000000);
+verify(promotion_form_token_valid($token, 'admin:/manager', 'test-secret', 1800000001), 'Valid form token');
+verify(!promotion_form_token_valid($token, 'other:/manager', 'test-secret', 1800000001), 'Actor binding');
+verify(!promotion_form_token_valid($token, 'admin:/other', 'test-secret', 1800000001), 'Page binding');
+verify(!promotion_form_token_valid($token, 'admin:/manager', 'test-secret', 1800003600), 'Token expiry');
+verify(!promotion_form_token_valid($token . 'x', 'admin:/manager', 'test-secret', 1800000001), 'Tampered token');
+verify(!promotion_form_token_valid(null, 'admin:/manager', 'test-secret'), 'Missing token');
 ob_start(); include __DIR__ . '/../public/promotions.php'; $body=ob_get_clean();
 verify(http_response_code()===403 && $body==='', 'Unauthorized management denied');
 echo "Promotion matching, validation, schedules, ordering, deduplication and unauthorized access passed.\n";

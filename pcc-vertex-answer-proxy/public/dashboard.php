@@ -5,13 +5,15 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__ || ($pccDashboardAu
   http_response_code(403);
   return;
 }
-header('Cache-Control: private, no-store');
+if (!headers_sent()) header('Cache-Control: private, no-store');
+require_once __DIR__ . '/api/management-access.php';
 require_once __DIR__ . '/../reports/dashboard-data.php';
 $pccDashboardBase = $pccDashboardBase ?? '/_resources/vertex/public';
-$pccReport = pcc_dashboard_load($_GET);
+$pccReport = pcc_dashboard_load($_GET, $config ?? null);
+$pccAdminTicket = $pccReport['admin_ticket'] ?? '';
 $pccEscape = static fn($v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 ?>
-<section id="pcc-report" class="my-4">
+<section id="pcc-report" class="my-4" data-admin-token="<?= $pccEscape($pccAdminTicket) ?>" data-admin-endpoint="<?= $pccEscape(rtrim($pccDashboardBase, '/') . '/api/management-fragment.php') ?>">
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
     <div><p class="small text-primary fw-bold text-uppercase mb-1">PCC Search Insights</p>
     <h2 class="h3 mb-1">Reporting &amp; feedback</h2>
@@ -47,7 +49,7 @@ $pccEscape = static fn($v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUB
     <?php if ($pccReport['limited'] || $pccReport['continuation']): ?>
       <div class="alert alert-info">Showing one batch of up to 2,000 records per collection. Counts, table searches, and exports apply to this batch only.
       <?php if ($pccReport['limited']): ?><a class="btn btn-primary btn-sm ms-3" href="?<?= $pccEscape(http_build_query($pccReport['next'])) ?>">Next batch &rarr;</a><?php else: ?><strong>Final batch.</strong><?php endif; ?>
-      <span class="d-block small mt-2">Use your browser’s Back button for the previous batch, or Load report to restart. Batches are read live; they are not a fixed snapshot.</span></div>
+      <span class="d-block small mt-2">Use Previous batch to return, or Load report to restart. Batches are read live; they are not a fixed snapshot.</span></div>
     <?php endif; ?>
     <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-5 g-3 mb-3">
       <?php foreach ($pccReport['counts'] as $label => $count): ?>
@@ -102,4 +104,5 @@ $pccEscape = static fn($v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUB
       <?php endforeach; ?></tbody></table></div></div></div>
   <?php endif; ?>
 </section>
-<script src="<?= $pccEscape(rtrim($pccDashboardBase, '/') . '/dashboard.js') ?>" defer></script>
+<script src="<?= $pccEscape(rtrim($pccDashboardBase, '/') . '/management-ui.js?v=20261027-3') ?>" defer></script>
+<script src="<?= $pccEscape(rtrim($pccDashboardBase, '/') . '/dashboard.js?v=20261027-3') ?>" defer></script>

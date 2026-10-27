@@ -145,3 +145,17 @@ function promotion_public(array $config, string $token, string $query): array {
     return array_map(static fn($r) => ['title' => $r['title'], 'uri' => $r['url'], 'description' => $r['description'], 'promoted' => true], promotion_matches(promotion_rules($config, $token, true), $query));
   } catch (Throwable $e) { error_log('Promoted search unavailable; continuing with organic results.'); return []; }
 }
+
+// Stateless CSRF tokens: bound to trusted actor and page path, valid for one hour.
+// No cookies, sessions or filesystem writes are required for a body-only include.
+function promotion_form_token(string $scope, string $secret, ?int $now = null): string {
+  $payload = (string) (($now ?? time()) + 3600) . '.' . bin2hex(random_bytes(24));
+  return $payload . '.' . hash_hmac('sha256', 'pcc-promotion-form:' . $scope . ':' . $payload, $secret);
+}
+function promotion_form_token_valid($token, string $scope, string $secret, ?int $now = null): bool {
+  if (!is_string($token) || !preg_match('/^([0-9]{10})\.([a-f0-9]{48})\.([a-f0-9]{64})$/D', $token, $parts)) return false;
+  $now ??= time();
+  if ((int) $parts[1] <= $now || (int) $parts[1] > $now + 3600) return false;
+  $expected = hash_hmac('sha256', 'pcc-promotion-form:' . $scope . ':' . $parts[1] . '.' . $parts[2], $secret);
+  return hash_equals($expected, $parts[3]);
+}

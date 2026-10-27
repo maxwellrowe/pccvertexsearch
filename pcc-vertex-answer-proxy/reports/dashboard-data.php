@@ -58,7 +58,7 @@ function pcc_report_query(array $settings, string $token, string $collection, st
   return ['rows' => $rows, 'next' => $more ? base64_encode(json_encode(['time' => $last['fields'][$field]['timestampValue'], 'name' => $last['name']], JSON_THROW_ON_ERROR)) : 'end'];
 }
 
-function pcc_dashboard_load(array $input): array {
+function pcc_dashboard_load(array $input, ?array $config = null): array {
   $tz = new DateTimeZone('America/Los_Angeles');
   $today = new DateTimeImmutable('today', $tz);
   $report = ['from' => is_string($input['report_from'] ?? null) ? $input['report_from'] : $today->modify('-6 days')->format('Y-m-d'),
@@ -73,7 +73,9 @@ function pcc_dashboard_load(array $input): array {
     }
     [$from, $to] = $dates;
     if ($to < $from) throw new InvalidArgumentException('The end date must be on or after the start date.');
-    $config = require __DIR__ . '/../config/config.php';
+    $config ??= require __DIR__ . '/../config/config.php';
+    require_once __DIR__ . '/../public/api/management-access.php';
+    $report['admin_ticket'] = pcc_admin_ticket('report', '', parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/', $config);
     $token = fetch_service_account_access_token(load_service_account($config['service_account_json']), 'https://www.googleapis.com/auth/datastore');
     $start = $from->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
     $end = $to->modify('+1 day')->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');

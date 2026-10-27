@@ -1,6 +1,35 @@
 (() => {
   function initialize() {
+    const root = document.querySelector('#pcc-report');
+    if (!root) return;
+    if (!window.PccAdminUI) {
+      if (!root._waitingForAdmin) {
+        root._waitingForAdmin = true;
+        const stopSubmission = event => {
+          event.preventDefault();
+          let warning = root.querySelector('[data-admin-load-warning]');
+          if (!warning) {
+            warning = document.createElement('p');
+            warning.dataset.adminLoadWarning = '1';
+            warning.className = 'alert alert-danger';
+            warning.setAttribute('role', 'alert');
+            warning.textContent = 'The AJAX script has not loaded. Check that management-ui.js is published and allowed by this page.';
+            root.prepend(warning);
+          }
+        };
+        root.addEventListener('submit', stopSubmission);
+        window.addEventListener('pcc-admin-ready', () => {
+          root.removeEventListener('submit', stopSubmission);
+          root.querySelector('[data-admin-load-warning]')?.remove();
+          initialize();
+        }, {once: true});
+      }
+      return;
+    }
+    window.PccAdminUI.bind(root, initialize);
     document.querySelectorAll('#pcc-report .pcc-report-table').forEach((table, index) => {
+      if (table.dataset.pccInitialized) return;
+      table.dataset.pccInitialized = '1';
       const options = {pageLength: 25, order: [[0, 'desc']], lengthMenu: [10, 25, 50, 100]};
       const originalRows = Array.from(table.tBodies[0].rows);
       let api;
